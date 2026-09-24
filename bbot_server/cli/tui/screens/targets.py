@@ -15,6 +15,7 @@ from bbot_server.cli.tui.widgets.paginated_table import PaginatedTableContainer
 from bbot_server.cli.tui.screens.create_target_modal import TargetModal
 from bbot_server.cli.tui.screens.confirm_modal import ConfirmModal
 from bbot_server.cli.tui.utils.colors import loading_text, success_text, warning_text, error_text
+from bbot_server.cli.tui.utils.formatters import get_field
 
 
 class TargetsScreen(Container):
@@ -95,7 +96,10 @@ class TargetsScreen(Container):
 
             # Get pagination parameters
             pagination = self.query_one("#target-pagination", PaginatedTableContainer)
-            skip, limit = pagination.get_skip_limit()
+            skip_limit = pagination.get_skip_limit()
+            if skip_limit is None:
+                return
+            skip, limit = skip_limit
 
             # Fetch targets with server-side pagination and search
             targets, total = await self.bbot_app.data_service.get_targets_paginated(
@@ -199,8 +203,8 @@ class TargetsScreen(Container):
     @work(exclusive=True)
     async def _confirm_delete_target(self, target) -> None:
         """Worker to confirm and delete a target"""
-        target_name = getattr(target, "name", "Unknown")
-        target_id = str(getattr(target, "id", ""))
+        target_name = get_field(target, "name", "Unknown")
+        target_id = str(get_field(target, "id", ""))
 
         confirmed = await self.app.push_screen_wait(
             ConfirmModal(

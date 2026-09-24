@@ -122,3 +122,11 @@ class ScanCTL(BaseBBCTL):
     ):
         self.bbot_server.cancel_scan(scan_id)
         self.log.info(f"Scan cancelled successfully")
+
+    @subcommand(help="Delete a completed, failed, or aborted scan")
+    def delete(
+        self,
+        scan_id: Annotated[str, Argument(help="Scan name or ID to delete")],
+    ):
+        self.bbot_server.delete_scan(scan_id)
+        self.log.info("Scan deleted successfully")

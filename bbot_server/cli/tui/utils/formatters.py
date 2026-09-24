@@ -6,10 +6,18 @@ and provides additional TUI-specific formatters.
 """
 
 from datetime import datetime, timedelta
-from typing import Optional, List
+from collections.abc import Mapping
+from typing import Any, Optional, List
 
 # Import existing formatters from the main utils
 from bbot_server.utils.misc import timestamp_to_human, seconds_to_human
+
+
+def get_field(item: Any, field: str, default: Any = None) -> Any:
+    """Read a field from either an API dictionary or a model object."""
+    if isinstance(item, Mapping):
+        return item.get(field, default)
+    return getattr(item, field, default)
 
 
 def format_timestamp(timestamp: float, include_hours: bool = True) -> str:

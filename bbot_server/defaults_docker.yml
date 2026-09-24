@@ -1,3 +1,6 @@
+# user-facing name shown in the UI and reports
+name: BBOT Server
+
 # url of BBOT server
 url: http://server:8807/v1/
 

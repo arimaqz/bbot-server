@@ -5,7 +5,7 @@ from pathlib import Path
 from contextlib import suppress
 
 from bbot_server import BBOTServer
-from bbot_server.errors import BBOTServerValueError
+from bbot_server.errors import BBOTServerNotFoundError, BBOTServerValueError
 from bbot_server.modules.targets.targets_models import CreateTarget
 
 from ..conftest import INGEST_PROCESSING_DELAY, log
@@ -218,6 +218,21 @@ async def test_queued_scan_cancellation(bbot_server):
     scans = [s async for s in bbot_server.get_scans()]
     assert len(scans) == 1
     assert scans[0].status == "ABORTED"
+
+
+async def test_scan_must_be_terminal_before_deletion(bbot_server):
+    bbot_server = await bbot_server()
+    target = await bbot_server.create_target(CreateTarget(name="target1", target=["example.org"]))
+    preset = await bbot_server.create_preset(preset={"name": "preset1"})
+    scan = await bbot_server.start_scan(name="scan1", target_id=target.id, preset_id=preset.id)
+
+    with pytest.raises(BBOTServerValueError, match="cancel it first"):
+        await bbot_server.delete_scan(id=scan.id)
+
+    await bbot_server.cancel_scan(id=scan.id)
+    await bbot_server.delete_scan(id=scan.id)
+    with pytest.raises(BBOTServerNotFoundError):
+        await bbot_server.get_scan(id=scan.id)
 
 
 async def test_running_scan_cancellation(bbot_agent, bbot_worker):

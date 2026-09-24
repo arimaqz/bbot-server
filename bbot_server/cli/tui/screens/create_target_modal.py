@@ -7,6 +7,8 @@ from textual.screen import ModalScreen
 from textual.containers import Container, Horizontal
 from textual.widgets import Static, Input, TextArea, Button, Checkbox
 
+from bbot_server.cli.tui.utils.formatters import get_field
+
 
 class TargetModal(ModalScreen[dict | None]):
     """Modal dialog for creating or editing a target"""
@@ -84,12 +86,12 @@ class TargetModal(ModalScreen[dict | None]):
     def compose(self) -> ComposeResult:
         """Create the modal dialog"""
         # Get initial values from target if editing
-        name = getattr(self.target, "name", "") or "" if self.target else ""
-        description = getattr(self.target, "description", "") or "" if self.target else ""
-        target_list = getattr(self.target, "target", []) or [] if self.target else []
-        seeds_list = getattr(self.target, "seeds", None) or [] if self.target else []
-        blacklist_list = getattr(self.target, "blacklist", []) or [] if self.target else []
-        strict_scope = getattr(self.target, "strict_scope", False) if self.target else False
+        name = get_field(self.target, "name", "") or ""
+        description = get_field(self.target, "description", "") or ""
+        target_list = get_field(self.target, "target", []) or []
+        seeds_list = get_field(self.target, "seeds", []) or []
+        blacklist_list = get_field(self.target, "blacklist", []) or []
+        strict_scope = get_field(self.target, "strict_scope", False)
 
         title = "Edit Target" if self.is_edit_mode else "Create New Target"
         submit_label = "Save" if self.is_edit_mode else "Create"
@@ -169,7 +171,7 @@ class TargetModal(ModalScreen[dict | None]):
 
         # Include ID for edit mode
         if self.is_edit_mode:
-            result["id"] = str(getattr(self.target, "id", ""))
+            result["id"] = str(get_field(self.target, "id", ""))
 
         self.dismiss(result)
 

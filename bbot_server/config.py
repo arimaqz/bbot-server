@@ -70,6 +70,7 @@ class BBOTServerSettings(BaseSettings):
     """
 
     # core
+    name: str = Field(default="BBOT Server", min_length=1, max_length=80)
     url: str
 
     # API key config
@@ -233,8 +234,14 @@ class BBOTServerSettings(BaseSettings):
         except ValueError as e:
             raise BBOTServerValueError("Invalid API key") from e
 
+        if parsed not in self.get_api_keys():
+            raise BBOTServerValueError("API key not found")
+        if len(self._valid_api_keys) <= 1:
+            raise BBOTServerValueError("Cannot revoke the last API key")
         # remove the API key from the config
         self._valid_api_keys.discard(parsed)
+        if self.api_key and str(parsed) == self.api_key:
+            self.api_key = None
         self.write_api_keys()
         self.refresh()
 
@@ -242,13 +249,17 @@ class BBOTServerSettings(BaseSettings):
         with open(BBOT_SERVER_CONFIG_PATH, "r") as f:
             config_yaml = yaml.safe_load(f) or {}
         # add the new API key to the config
-        api_key = self.api_key or config_yaml.get("api_key", None)
+        api_key = self.api_key
         api_keys = [str(key) for key in self._valid_api_keys]
         if api_key:
             api_keys = sorted([k for k in api_keys if not k == api_key])
             config_yaml["api_key"] = api_key
+        else:
+            config_yaml.pop("api_key", None)
         if api_keys:
             config_yaml["api_keys"] = api_keys
+        else:
+            config_yaml.pop("api_keys", None)
 
         num_api_keys = len(api_keys) + (1 if api_key else 0)
         if num_api_keys > 0:
@@ -256,6 +267,24 @@ class BBOTServerSettings(BaseSettings):
             # save the config file
             with open(BBOT_SERVER_CONFIG_PATH, "w") as f:
                 yaml.safe_dump(config_yaml, f)
+
+    def set_name(self, name: str) -> None:
+        """Persist the user-facing application name in the shared YAML config."""
+        name = name.strip()
+        if not name:
+            raise BBOTServerValueError("Name cannot be empty")
+        if len(name) > 80:
+            raise BBOTServerValueError("Name cannot exceed 80 characters")
+        if os.environ.get("BBOT_SERVER_NAME"):
+            raise BBOTServerValueError(
+                "Name is controlled by BBOT_SERVER_NAME; remove that environment variable before changing it here"
+            )
+        with open(BBOT_SERVER_CONFIG_PATH, "r") as f:
+            config_yaml = yaml.safe_load(f) or {}
+        config_yaml["name"] = name
+        with open(BBOT_SERVER_CONFIG_PATH, "w") as f:
+            yaml.safe_dump(config_yaml, f, sort_keys=False)
+        self.refresh()
 
 
 BBOT_SERVER_CONFIG = BBOTServerSettings()

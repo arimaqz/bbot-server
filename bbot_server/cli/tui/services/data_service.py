@@ -1,5 +1,6 @@
 """Data service for BBOT Server TUI"""
 
+import asyncio
 import logging
 from typing import Optional, List, Any
 
@@ -49,6 +50,87 @@ class DataService:
         except BBOTServerError:
             log.exception("Error fetching scans")
             return []
+
+    async def get_scan_options(self):
+        """Return current target and preset choices for the start dialog."""
+        return await self._async_client.get_targets(), await self._async_client.get_presets()
+
+    async def start_scan(self, **options):
+        return await self._async_client.start_scan(**options)
+
+    async def cancel_scan(self, scan_id):
+        return await self._async_client.cancel_scan(id=scan_id)
+
+    async def delete_scan(self, scan_id):
+        return await self._async_client.delete_scan(id=scan_id)
+
+    async def export_scan_report(self, scan, format="html"):
+        from bbot_server.reporting import collect_report, report_path, write_report
+
+        snapshot = await collect_report(self._async_client, scan=scan)
+        return write_report(snapshot, format, report_path(scan).with_suffix(f".{format}"))
+
+    async def get_targets(self):
+        return await self._async_client.get_targets()
+
+    async def get_scope_report(self, **scope):
+        from bbot_server.reporting import collect_report
+
+        return await collect_report(self._async_client, **scope)
+
+    async def get_presets(self):
+        return await self._async_client.get_presets()
+
+    async def get_modules(self) -> List[dict[str, Any]]:
+        """Return module metadata from the installed BBOT runtime."""
+        return await asyncio.to_thread(self._get_modules)
+
+    @staticmethod
+    def _get_modules() -> List[dict[str, Any]]:
+        from bbot.core.modules import MODULE_LOADER
+
+        preloaded = MODULE_LOADER.preloaded()
+        module_options = MODULE_LOADER.modules_options()
+        modules = []
+        for name, data in sorted(preloaded.items()):
+            meta = data.get("meta", {})
+            options = [
+                {"name": option_name, "type": option_type, "description": description, "default": default}
+                for option_name, option_type, description, default in module_options.get(name, [])
+            ]
+            modules.append(
+                {
+                    "name": name,
+                    "type": data.get("type", "scan"),
+                    "needs_api_key": bool(data.get("options_mandatory")),
+                    "description": meta.get("description", ""),
+                    "author": meta.get("author", ""),
+                    "created_date": meta.get("created_date", ""),
+                    "flags": sorted(data.get("flags", [])),
+                    "watched_events": sorted(data.get("watched_events", [])),
+                    "produced_events": sorted(data.get("produced_events", [])),
+                    "options": options,
+                }
+            )
+        return modules
+
+    async def create_preset(self, preset):
+        return await self._async_client.create_preset(preset=preset)
+
+    async def update_preset(self, preset_id, preset):
+        return await self._async_client.update_preset(preset_id=preset_id, preset=preset)
+
+    async def delete_preset(self, preset_id):
+        return await self._async_client.delete_preset(preset_id=preset_id)
+
+    async def get_agents(self):
+        return await self._async_client.get_agents()
+
+    async def create_agent(self, name, description):
+        return await self._async_client.create_agent(name=name, description=description)
+
+    async def delete_agent(self, agent_id):
+        return await self._async_client.delete_agent(id=agent_id)
 
     async def get_assets_paginated(self, skip: int = 0, limit: int = 25, **filters) -> tuple[List[Any], int]:
         return await self._fetch_paginated("query_assets", "count_assets", skip, limit, **filters)

@@ -47,20 +47,23 @@ class ScanTable(DataTable):
         self.clear()
 
         # Sort by creation time (newest first)
-        sorted_scans = sorted(scans, key=lambda s: s["created"] or "", reverse=True)
+        sorted_scans = sorted(scans, key=lambda s: s.get("created") or 0, reverse=True)
 
         for scan in sorted_scans:
-            name = scan["name"] or scan["id"]
-            status_val = scan["status"]
+            scan_id = scan.get("id", "")
+            name = scan.get("name") or scan_id or "Unknown"
+            status_val = scan.get("status", "UNKNOWN")
             status = colorize_status(status_val, status_val)
             target = scan.get("target")
-            target_name = target["name"] if target else "-"
+            target_name = target.get("name", "-") if target else "-"
             preset = scan.get("preset")
-            preset_name = preset["name"] if preset else "-"
-            started = format_timestamp_short(scan["started_at"]) if scan["started_at"] else "-"
-            finished = format_timestamp_short(scan["finished_at"]) if scan["finished_at"] else "-"
-            duration = format_duration_short(scan["duration_seconds"]) if scan["duration_seconds"] else "-"
-            scan_id = scan["id"]
+            preset_name = preset.get("name", "-") if preset else "-"
+            started_at = scan.get("started_at")
+            finished_at = scan.get("finished_at")
+            duration_seconds = scan.get("duration_seconds")
+            started = format_timestamp_short(started_at) if started_at else "-"
+            finished = format_timestamp_short(finished_at) if finished_at else "-"
+            duration = format_duration_short(duration_seconds) if duration_seconds else "-"
 
             # Add row
             row_key = self.add_row(

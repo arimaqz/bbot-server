@@ -188,6 +188,13 @@ class ScansApplet(BaseApplet):
             },
         )
 
+    @api_endpoint("/delete/{id}", methods=["DELETE"], summary="Delete a completed, failed, or aborted scan")
+    async def delete_scan(self, id: str):
+        scan = await self.get_scan(id)
+        if get_scan_status_code(scan.status_code) < SCAN_STATUS_FINISHED:
+            raise self.BBOTServerValueError(f"Scan {scan.name} is active; cancel it first")
+        await self.collection.delete_one({"id": str(scan.id)})
+
     async def start_scans_loop(self):
         try:
             while True:

@@ -1,7 +1,23 @@
 import os
+import yaml
 from tempfile import NamedTemporaryFile
 from tests.conftest import TEST_CONFIG_PATH
 from bbot_server.config import BBOT_SERVER_CONFIG as bbcfg
+from bbot_server.config import BBOTServerSettings
+
+
+def test_name_setting_is_persisted(monkeypatch, tmp_path):
+    import bbot_server.config as config_module
+
+    config_file = tmp_path / "config.yml"
+    config_file.write_text("name: BBOT Server\n")
+    monkeypatch.setattr(config_module, "BBOT_SERVER_CONFIG_PATH", config_file)
+    settings = BBOTServerSettings(config_path=config_file)
+
+    settings.set_name("Acme Security")
+
+    assert settings.name == "Acme Security"
+    assert yaml.safe_load(config_file.read_text())["name"] == "Acme Security"
 
 
 def test_config():

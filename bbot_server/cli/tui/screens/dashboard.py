@@ -26,7 +26,7 @@ class DashboardScreen(Container):
         with Container(id="dashboard-container"):
             # Title and refresh
             with Horizontal(id="dashboard-header", classes="controls-bar"):
-                yield Static("[bold]BBOT Server Dashboard[/bold]", id="dashboard-title")
+                yield Static(f"[bold]{self.bbot_app.config.name} Dashboard[/bold]", id="dashboard-title")
                 yield Button("Refresh", id="refresh-btn", variant="primary")
 
             # Stats cards

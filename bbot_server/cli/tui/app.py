@@ -53,6 +53,11 @@ from bbot_server.cli.tui.screens.events import EventsScreen
 from bbot_server.cli.tui.screens.technologies import TechnologiesScreen
 from bbot_server.cli.tui.screens.targets import TargetsScreen
 from bbot_server.cli.tui.screens.activity import ActivityScreen
+from bbot_server.cli.tui.screens.management import PresetsScreen, AgentsScreen
+from bbot_server.cli.tui.screens.api_keys import APIKeysScreen
+from bbot_server.cli.tui.screens.reports import ReportsScreen
+from bbot_server.cli.tui.screens.modules import ModulesScreen
+from bbot_server.cli.tui.screens.settings import SettingsScreen
 
 
 class BBOTServerTUI(App):
@@ -76,6 +81,12 @@ class BBOTServerTUI(App):
         Binding("t", "show_technologies", "Technologies"),
         Binding("r", "show_targets", "Targets"),
         Binding("v", "show_activity", "Activity"),
+        Binding("p", "show_presets", "Presets"),
+        Binding("m", "show_modules", "Modules"),
+        Binding("g", "show_agents", "Agents"),
+        Binding("k", "show_keys", "API Keys"),
+        Binding("o", "show_reports", "Reports"),
+        Binding("u", "show_settings", "Settings"),
         Binding("question_mark", "show_help", "Help"),
     ]
 
@@ -90,6 +101,7 @@ class BBOTServerTUI(App):
         super().__init__()
         self.bbot_server = bbot_server
         self.config = config
+        self.title = config.name
 
         # TUI settings
         self.items_per_page = config.cli.tui_page_size
@@ -108,6 +120,12 @@ class BBOTServerTUI(App):
         self.technologies_screen = None
         self.targets_screen = None
         self.activity_screen = None
+        self.presets_screen = None
+        self.modules_screen = None
+        self.agents_screen = None
+        self.keys_screen = None
+        self.reports_screen = None
+        self.settings_screen = None
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app"""
@@ -146,6 +164,30 @@ class BBOTServerTUI(App):
             with TabPane("Activity", id="tab-activity"):
                 self.activity_screen = ActivityScreen(self)
                 yield self.activity_screen
+
+            with TabPane("Presets", id="tab-presets"):
+                self.presets_screen = PresetsScreen(self)
+                yield self.presets_screen
+
+            with TabPane("Modules", id="tab-modules"):
+                self.modules_screen = ModulesScreen(self)
+                yield self.modules_screen
+
+            with TabPane("Agents", id="tab-agents"):
+                self.agents_screen = AgentsScreen(self)
+                yield self.agents_screen
+
+            with TabPane("API Keys", id="tab-keys"):
+                self.keys_screen = APIKeysScreen(self)
+                yield self.keys_screen
+
+            with TabPane("Reports", id="tab-reports"):
+                self.reports_screen = ReportsScreen(self)
+                yield self.reports_screen
+
+            with TabPane("Settings", id="tab-settings"):
+                self.settings_screen = SettingsScreen(self)
+                yield self.settings_screen
 
         yield Footer()
 
@@ -237,6 +279,12 @@ class BBOTServerTUI(App):
             "tab-technologies": self.technologies_screen,
             "tab-targets": self.targets_screen,
             "tab-activity": self.activity_screen,
+            "tab-presets": self.presets_screen,
+            "tab-modules": self.modules_screen,
+            "tab-agents": self.agents_screen,
+            "tab-keys": self.keys_screen,
+            "tab-reports": self.reports_screen,
+            "tab-settings": self.settings_screen,
         }
 
         # Get the screen for this tab and trigger lazy load
@@ -314,17 +362,43 @@ class BBOTServerTUI(App):
         tabs = self.query_one(TabbedContent)
         tabs.active = "tab-activity"
 
+    def action_show_presets(self) -> None:
+        self.query_one(TabbedContent).active = "tab-presets"
+
+    def action_show_modules(self) -> None:
+        self.query_one(TabbedContent).active = "tab-modules"
+
+    def action_show_agents(self) -> None:
+        self.query_one(TabbedContent).active = "tab-agents"
+
+    def action_show_keys(self) -> None:
+        self.query_one(TabbedContent).active = "tab-keys"
+
+    def action_show_reports(self) -> None:
+        self.query_one(TabbedContent).active = "tab-reports"
+
+    def action_show_settings(self) -> None:
+        self.query_one(TabbedContent).active = "tab-settings"
+
+    def apply_display_name(self, name: str) -> None:
+        """Refresh visible branding immediately after a settings change."""
+        self.title = name
+        if self.dashboard_screen:
+            self.dashboard_screen.query_one("#dashboard-title").update(f"[bold]{name} Dashboard[/bold]")
+
     def action_show_help(self) -> None:
         """Show help modal with keyboard shortcuts"""
         self.notify(
-            "Help: d=Dashboard s=Scans a=Assets f=Findings e=Events t=Technologies r=Targets v=Activity q=Quit"
+            "Help: d=Dashboard s=Scans a=Assets f=Findings e=Events t=Technologies r=Targets v=Activity p=Presets m=Modules g=Agents k=Keys o=Reports u=Settings q=Quit"
         )
 
     def get_system_commands(self, screen: Screen) -> Iterable[SystemCommand]:
         """Add BBOT theme shortcuts to the system menu"""
         yield from super().get_system_commands(screen)
-        yield SystemCommand("BBOT Dark Theme", "Switch to BBOT dark theme", self.action_theme_bbot_dark)
-        yield SystemCommand("BBOT Light Theme", "Switch to BBOT light theme", self.action_theme_bbot_light)
+        yield SystemCommand(f"{self.config.name} Dark Theme", "Switch to the dark theme", self.action_theme_bbot_dark)
+        yield SystemCommand(
+            f"{self.config.name} Light Theme", "Switch to the light theme", self.action_theme_bbot_light
+        )
 
     def action_theme_bbot_dark(self) -> None:
         """Switch to BBOT dark theme"""

@@ -123,7 +123,7 @@ TabPane {
 
 /* Dashboard stats cards */
 #stats-grid {
-    grid-size: 5 1;
+    grid-size: 4 1;
     grid-gutter: 1;
     height: auto;
     padding: 1;
@@ -397,6 +397,59 @@ Container:focus-within {
     padding: 0 1;
     margin-top: 1;
     dock: bottom;
+}
+
+/* Keep scan actions compact: lifecycle actions share the first row, while the
+   report format and wider export button share the second row. */
+#scan-actions {
+    layout: grid;
+    grid-size: 3 2;
+    grid-columns: 1fr 1fr 1fr;
+    grid-rows: 3 3;
+    grid-gutter: 1;
+    height: 7;
+    align: center middle;
+}
+
+#scan-actions Button,
+#scan-actions Select {
+    width: 1fr;
+    min-width: 0;
+    max-width: 100%;
+    margin: 0;
+}
+
+#report-scan-btn {
+    column-span: 2;
+}
+
+/* Keep the new report screen aligned with the established screen gutters. */
+#reports-content {
+    padding: 1 2;
+}
+
+#report-target {
+    width: 1fr;
+    max-width: 100%;
+    margin: 0 1 1 1;
+}
+
+#report-summary {
+    min-height: 5;
+    margin: 1;
+    padding: 1;
+    border: solid $secondary;
+}
+
+#module-type {
+    width: 18;
+    min-width: 18;
+    max-width: 18;
+    margin: 0 1;
+}
+
+#module-detail {
+    width: 100%;
 }
 
 /* Pagination controls */

@@ -37,25 +37,29 @@ class ScanDetail(Container):
             return
 
         lines = []
-        lines.append(f"[bold]{scan['name'] or scan['id']}[/bold]")
+        scan_id = scan.get("id", "")
+        lines.append(f"[bold]{scan.get('name') or scan_id or 'Unknown'}[/bold]")
         lines.append("")
 
-        status = scan["status"]
+        status = scan.get("status", "UNKNOWN")
         lines.append(f"Status: {colorize_status(status, status)}")
 
-        if scan["started_at"]:
-            lines.append(f"Started: {format_timestamp(scan['started_at'])}")
-        if scan["finished_at"]:
-            lines.append(f"Finished: {format_timestamp(scan['finished_at'])}")
-        if scan["duration_seconds"]:
-            lines.append(f"Duration: {format_duration(scan['duration_seconds'])}")
+        started_at = scan.get("started_at")
+        finished_at = scan.get("finished_at")
+        duration_seconds = scan.get("duration_seconds")
+        if started_at:
+            lines.append(f"Started: {format_timestamp(started_at)}")
+        if finished_at:
+            lines.append(f"Finished: {format_timestamp(finished_at)}")
+        if duration_seconds:
+            lines.append(f"Duration: {format_duration(duration_seconds)}")
 
         lines.append("")
 
         target = scan.get("target")
         if target:
             lines.append("[bold]Target:[/bold]")
-            lines.append(f"  Name: {target['name']}")
+            lines.append(f"  Name: {target.get('name', '-')}")
             target_list = target.get("target")
             if isinstance(target_list, list) and target_list:
                 lines.append(f"  Targets: {', '.join(target_list[:5])}")
@@ -71,7 +75,7 @@ class ScanDetail(Container):
         preset = scan.get("preset")
         if preset:
             lines.append("[bold]Preset:[/bold]")
-            lines.append(f"  Name: {preset['name']}")
+            lines.append(f"  Name: {preset.get('name', '-')}")
             preset_config = preset.get("preset")
             if isinstance(preset_config, dict) and "modules" in preset_config:
                 modules = preset_config["modules"]
@@ -88,7 +92,7 @@ class ScanDetail(Container):
             lines.append("Agent: [dim]Not assigned[/dim]")
 
         lines.append("")
-        lines.append(f"[dim]ID: {scan['id']}[/dim]")
+        lines.append(f"[dim]ID: {scan_id or '-'}[/dim]")
 
         content_widget.update("\n".join(lines))
 

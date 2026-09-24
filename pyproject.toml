@@ -26,6 +26,7 @@ dependencies = [
     "textual>=7.5.0",
     "omegaconf>=2.3.0,<3",
     "bbot",
+    "reportlab>=4.2.0",
 ]
 
 [project.scripts]

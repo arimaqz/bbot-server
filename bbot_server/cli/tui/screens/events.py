@@ -87,7 +87,10 @@ class EventsScreen(Container):
 
             # Get pagination parameters
             pagination = self.query_one("#event-pagination", PaginatedTableContainer)
-            skip, limit = pagination.get_skip_limit()
+            skip_limit = pagination.get_skip_limit()
+            if skip_limit is None:
+                return
+            skip, limit = skip_limit
 
             # Fetch events with server-side pagination and search
             search_term = self.filter_text if self.filter_text else None

@@ -4,6 +4,7 @@ x-bbot-server-base: &bbot-server-base
   restart: unless-stopped
   volumes:
     - "${BBOT_SERVER_CONFIG:-~/.config/bbot_server/config.yml}:/home/bbot/.config/bbot_server/config.yml"
+    - "${BBOT_REPORTS_DIR:-~/bbot-reports}:/home/bbot/bbot-reports"
     - ./bbot_server:/app/bbot_server
     - ./bbot_server/defaults_docker.yml:/app/bbot_server/defaults.yml
 
@@ -21,6 +22,9 @@ services:
       start_period: 30s
     environment:
       - BBOT_SERVER_AUTH_ENABLED=${BBOT_SERVER_AUTH_ENABLED:-true}
+      - BBOT_REPORTS_HOST_DIR=${BBOT_REPORTS_DIR:-~/bbot-reports}
+      - COLORTERM=truecolor
+      - TERM=xterm-256color
     depends_on:
       - mongodb
       - redis
@@ -28,6 +32,15 @@ services:
   worker:
     <<: *bbot-server-base
     command: ["bbctl", "server", "start", "--worker-only"]
+    environment:
+      - BBOT_SERVER_RECONCILE_INDEXES=false
+    depends_on:
+      server:
+        condition: service_healthy
+
+  agent:
+    <<: *bbot-server-base
+    command: ["bash", "/app/bbot_server/default_agent.sh"]
     environment:
       - BBOT_SERVER_RECONCILE_INDEXES=false
     depends_on:

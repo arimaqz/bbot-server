@@ -101,7 +101,10 @@ class FindingsScreen(Container):
 
             # Get pagination parameters
             pagination = self.query_one("#finding-pagination", PaginatedTableContainer)
-            skip, limit = pagination.get_skip_limit()
+            skip_limit = pagination.get_skip_limit()
+            if skip_limit is None:
+                return
+            skip, limit = skip_limit
 
             # Build filter kwargs for server-side filtering
             filters = {}

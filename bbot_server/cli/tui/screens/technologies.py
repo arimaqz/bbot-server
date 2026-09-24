@@ -87,7 +87,10 @@ class TechnologiesScreen(Container):
 
             # Get pagination parameters
             pagination = self.query_one("#technology-pagination", PaginatedTableContainer)
-            skip, limit = pagination.get_skip_limit()
+            skip_limit = pagination.get_skip_limit()
+            if skip_limit is None:
+                return
+            skip, limit = skip_limit
 
             # Fetch technologies with server-side pagination and search
             technologies, total = await self.bbot_app.data_service.get_technologies_paginated(

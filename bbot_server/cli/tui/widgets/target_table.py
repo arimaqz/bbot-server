@@ -3,7 +3,7 @@ Target table widget for BBOT Server TUI
 """
 
 from textual.widgets import DataTable
-from bbot_server.cli.tui.utils.formatters import format_timestamp
+from bbot_server.cli.tui.utils.formatters import format_timestamp, get_field
 
 
 class TargetTable(DataTable):
@@ -36,15 +36,16 @@ class TargetTable(DataTable):
 
         # Add new rows
         for target in targets:
-            name = getattr(target, "name", "UNKNOWN")
-            description = getattr(target, "description", "")
+            name = get_field(target, "name", "UNKNOWN") or "UNKNOWN"
+            description = get_field(target, "description", "") or ""
             # Truncate long descriptions
             if len(description) > 40:
                 description = description[:37] + "..."
 
-            target_size = str(getattr(target, "target_size", 0))
-            is_default = "Yes" if getattr(target, "default", False) else ""
-            created = format_timestamp(getattr(target, "created", 0))
+            target_size = str(get_field(target, "target_size", 0))
+            is_default = "Yes" if get_field(target, "default", False) else ""
+            created_timestamp = get_field(target, "created")
+            created = format_timestamp(created_timestamp) if created_timestamp is not None else "-"
 
             self.add_row(name, description, target_size, is_default, created)
 
