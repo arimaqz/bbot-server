@@ -23,6 +23,10 @@ BBOT Server is a database and multiplayer hub for all your [BBOT](https://github
 
 ## Installation
 
+For a complete Docker setup on Linux or Windows—including host report folders,
+configuration, verification, updates, and troubleshooting—see
+**[INSTALL.md](INSTALL.md)**.
+
 ```bash
 # install with uv (recommended)
 uv tool install bbot-server

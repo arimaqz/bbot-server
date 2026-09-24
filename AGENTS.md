@@ -34,6 +34,7 @@ workflow:
 - `bbot_server/config.py`, `defaults.yml`, `defaults_docker.yml`: configuration.
 - `compose.yml`: local application stack (server, worker, agent, MongoDB, Redis).
 - `compose.test.yml`: disposable host-side MongoDB and Redis for tests.
+- `INSTALL.md`: supported Linux and Windows Docker installation workflow.
 - `tests/`: regression, API, CLI, TUI, and integration tests.
 - `helm/`: Kubernetes chart; test separately with `helm_deployment_test.py`.
 
