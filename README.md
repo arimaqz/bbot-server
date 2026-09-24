@@ -40,6 +40,22 @@ git clone git@github.com:blacklanternsecurity/bbot-server.git && cd bbot-server
 uv sync
 ```
 
+### Run the test suite locally
+
+With Docker Desktop running, start the disposable MongoDB and Redis services
+used by host-side tests:
+
+```bash
+docker compose -f compose.test.yml up -d --wait
+uv sync --frozen
+uv run pytest -v tests/
+docker compose -f compose.test.yml down
+```
+
+The `tests/` path excludes the separate `helm_deployment_test.py`, which
+requires Minikube, Helm, and kubectl. The test services bind only to localhost.
+Stop the disposable test services when finished to free their resources.
+
 Note: to update to the latest version, run `git pull && uv sync` in the `bbot-server` directory.
 
 When installed from source, commands shown below as `bbctl` can be run with `uv run bbctl` from the project directory, or you can activate the virtual environment first with `source .venv/bin/activate`.
@@ -362,6 +378,55 @@ Thanks to [@k11h-de](https://github.com/k11h-de) for implementing this feature!
 bbctl ui
 ```
 
+### Start, cancel, and report on scans
+
+Open the **Scans** tab (`s`) and choose **New Scan**. Select an existing target and
+preset, optionally name the scan or include known assets as seeds, then choose
+**Start**. The scan is queued until an agent is available. Select a queued or
+running scan and choose **Cancel Scan** to request cancellation after confirmation.
+Finished, failed, and aborted scans can be permanently removed with **Delete Scan**.
+Active scans must be cancelled before they can be deleted.
+
+Select a scan, choose HTML, PDF, CSV, or JSON, then choose **Export Report**.
+Reports are saved in `~/bbot-reports/`. The HTML and PDF versions are suitable
+for sharing; CSV and JSON provide the same structured inventory data
+for further analysis. Reports include in-scope asset and finding totals, a
+severity breakdown, discovered assets with their open ports, technologies, and
+all active findings. They exclude ignored and archived findings. **A report is a current target inventory
+snapshot**, which may include findings from other scans of the same target;
+the selected scan supplies the target, preset, and timing shown on the report.
+
+The **Reports** tab (`o`) can create the same four formats for any existing
+target or a domain/subdomain, without selecting a scan. Choose one scope to
+view its summary or export it directly.
+
+With Docker Compose, `~/bbot-reports/` is bind-mounted to the same directory in
+the host user's home folder, so exported reports are immediately available on
+the host. Set `BBOT_REPORTS_DIR` before starting Compose to use another host
+directory.
+
+The **Settings** tab (`u`) changes the application display name. The saved name
+is used in the UI and in newly generated HTML, PDF, CSV, and JSON reports.
+
+The **Presets** tab (`p`) lets you create, inspect, edit, and delete scan presets
+using YAML. The **Agents** tab (`g`) lists, registers, and deletes agent records.
+Docker Compose automatically starts local processes for agents created in the
+UI; non-Docker deployments can start agents on their hosts using
+`bbctl agent start`.
+
+The **Modules** tab (`m`) lists the BBOT modules installed in the current
+runtime, including their type, flags, events, configuration options, and API-key
+requirements. The list reflects the installed BBOT version rather than a
+hardcoded catalog.
+
+The **API Keys** tab (`k`) adds, lists, and revokes keys in the *local server
+configuration*. It only enables those actions when the configured server URL
+points to localhost and the local server config file exists. Existing keys are
+masked; a new key is shown once for copying. Remote key management remains a
+server-side administration task via `bbctl server apikey` on the server machine.
+The UI cannot revoke the key it is currently using; switch the client to
+another key first.
+
 ### Screens Overview
 
 | Screen | Shortcut | Description |
@@ -371,7 +436,15 @@ bbctl ui
 | **Activity** | `v` | Real-time WebSocket feed of scan events with pause/resume |
 | **Assets** | `a` | Browse and filter discovered assets by domain, target, or in-scope status |
 | **Findings** | `f` | View and filter security findings by severity (CRITICAL → INFO) |
+| **Events** | `e` | Browse and filter raw events ingested from scans |
+| **Technologies** | `t` | Browse technologies discovered on assets |
+| **Targets** | `r` | Create, edit, inspect, and delete scan targets |
 | **Agents** | `g` | List, create, and manage BBOT agents |
+| **Presets** | `p` | Create, inspect, edit, and delete scan presets |
+| **Modules** | `m` | Inspect installed BBOT modules and their options |
+| **API Keys** | `k` | Manage keys in the local server configuration |
+| **Reports** | `o` | Scoped target/domain summaries and HTML, PDF, CSV, JSON exports |
+| **Settings** | `u` | Change the global display name used by the UI and reports |
 
 ## Targets
 
