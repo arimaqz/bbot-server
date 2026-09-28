@@ -6,6 +6,7 @@ RUN uv sync --frozen --no-install-project
 COPY . .
 RUN cp bbot_server/defaults_docker.yml bbot_server/defaults.yml
 RUN uv sync --frozen
+RUN sed -i 's/\r$//' bbot_server/*.sh
 RUN useradd -u 1000 -m bbot \
     && mkdir -p /home/bbot/.config/bbot \
     && chown -R bbot:bbot /home/bbot /app

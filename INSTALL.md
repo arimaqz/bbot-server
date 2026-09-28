@@ -212,6 +212,13 @@ Reports appear immediately in the host directory configured by
 `%USERPROFILE%\bbot-reports` on Windows in the examples above. Reports include
 discovered assets and, when present, their ports, technologies, and active
 findings. Ports are shown with their assets instead of in a duplicate section.
+Reports exported from a scan additionally include scan-scoped event results
+grouped by producing module. Configured modules with no stored events remain
+visible as `no observed results`; that label does not prove whether a module
+completed, was skipped, or failed before emitting an event. HTML module sections
+are linked, collapsible, and searchable. Scope and methodology includes a
+sanitized preset definition with credential-like values replaced by
+`[REDACTED]`.
 
 ## Routine commands
 

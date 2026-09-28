@@ -22,7 +22,10 @@ SCAN = {
     "finished_at": 2,
     "duration_seconds": 1,
     "target": {"id": "target-1", "name": "Example", "target": ["example.org"]},
-    "preset": {"name": "baseline"},
+    "preset": {
+        "name": "baseline",
+        "preset": {"modules": ["fingerprintx", "http", "nuclei", "quiet-module"]},
+    },
 }
 
 
@@ -60,6 +63,59 @@ class ReportClient:
         self.requests.append(("technologies", kwargs))
         return [{"technology": "Apache", "hosts": ["example.org"], "last_seen": 1}]
 
+    async def query_events(self, **kwargs):
+        self.requests.append(("events", kwargs))
+        yield {
+            "type": "PROTOCOL",
+            "host": "example.org",
+            "port": 443,
+            "timestamp": 8,
+            "module": "fingerprintx",
+            "data_json": {"protocol": "https", "host": "example.org", "port": 443},
+        }
+        yield {
+            "type": "PROTOCOL",
+            "host": "example.org.",
+            "port": 80,
+            "timestamp": 9,
+            "module": "fingerprintx",
+            "data_json": {"protocol": "http", "host": "example.org", "port": 80},
+        }
+        yield {
+            "type": "URL",
+            "host": "example.org",
+            "port": 443,
+            "timestamp": 10,
+            "tags": ["in-scope", "status-200"],
+            "module": "http",
+            "data_json": {
+                "url": "https://example.org/",
+                "http_title": "Example",
+                "body": "must-not-appear",
+                "headers": {"authorization": "must-not-appear"},
+            },
+        }
+        yield {
+            "type": "FINDING",
+            "host": "example.org",
+            "timestamp": 11,
+            "module": "nuclei",
+            "data_json": {"name": "Exposed panel", "severity": "LOW", "description": "Login page detected"},
+        }
+        yield {
+            "type": "DNS_NAME",
+            "host": "api.example.org",
+            "timestamp": 12,
+            "module": "dnsresolve",
+            "data": "api.example.org",
+        }
+        yield {
+            "type": "SCAN",
+            "timestamp": 13,
+            "module": "SEED",
+            "data_json": {"preset": {"modules": ["http", "nuclei"], "output_modules": ["webhook"]}},
+        }
+
 
 @pytest.mark.asyncio
 async def test_report_scopes_counts_and_escapes_values(tmp_path):
@@ -68,7 +124,7 @@ async def test_report_scopes_counts_and_escapes_values(tmp_path):
     html = path.read_text()
     assert "12</strong>" in html
     assert "2</strong>" in html
-    assert "&lt;script&gt;" in html and "<script>" not in html
+    assert "&lt;script&gt;" in html and "<script>alert(1)</script>" not in html
     assert "&lt;unsafe&gt;" in html
     assert "multiple scans" in html
     assert "Discovered assets" in html
@@ -78,7 +134,25 @@ async def test_report_scopes_counts_and_escapes_values(tmp_path):
     assert "api.example.org" in html
     assert "80, 443" in html
     assert "Apache" in html
-    assert all(kwargs["target_id"] == "target-1" for _, kwargs in client.requests)
+    assert "Module coverage" in html
+    assert "quiet-module" in html
+    assert "status_code&quot;: 200" in html
+    assert "http_title&quot;: &quot;Example" in html
+    assert "https://example.org/" in html
+    assert "href='#module-http-1'" in html
+    assert "<details class='module-section' id='module-http-1' open>" in html
+    assert "data-module-filter" in html
+    assert "data-module-row" in html
+    assert "data-module='fingerprintx'>2 results</td>" in html
+    assert "data-module='http'>1 result</td>" in html
+    assert "Module columns count scan events associated with that exact host." in html
+    assert "api.example.org" in html
+    assert "Effective preset modules:" in html
+    assert "&quot;modules&quot;" in html
+    assert html.index(">http</a>") < html.index(">dnsresolve</a>")
+    assert "must-not-appear" not in html
+    assert all(kwargs["target_id"] == "target-1" for kind, kwargs in client.requests if kind != "events")
+    assert [kwargs["scan"] for kind, kwargs in client.requests if kind == "events"] == ["SCAN:1"]
     assert all(kwargs["ignored"] is False for kind, kwargs in client.requests if kind in ("findings", "details"))
     assert [r[1]["min_severity"] for r in client.requests if r[0] == "findings"] == [5, 4, 3, 2, 1]
 
@@ -90,18 +164,72 @@ async def test_report_exports_and_redacts_preset_secrets(tmp_path):
     import shutil
     import subprocess
 
-    scan = {**SCAN, "preset": {"name": "baseline", "preset": {"config": {"api_key": "secret-value"}}}}
+    scan = {
+        **SCAN,
+        "preset": {
+            "name": "baseline",
+            "preset": {
+                "modules": ["fingerprintx", "http", "nuclei", "quiet-module"],
+                "config": {"api_key": "secret-value"},
+            },
+        },
+    }
     snapshot = await collect_report(ReportClient(), scan=scan)
-    assert snapshot["scan"]["preset"] == {"name": "baseline"}
+    assert snapshot["scan"]["preset"] == {
+        "name": "baseline",
+        "definition": {
+            "modules": ["fingerprintx", "http", "nuclei", "quiet-module"],
+            "config": {"api_key": "[REDACTED]"},
+        },
+    }
     assert snapshot["asset_records"] == [
-        {"host": "api.example.org", "open_ports": [], "technologies": []},
-        {"host": "example.org", "open_ports": [80, 443], "technologies": ["Apache"]},
+        {
+            "host": "api.example.org",
+            "open_ports": [],
+            "technologies": [],
+            "module_counts": {
+                "fingerprintx": 0,
+                "http": 0,
+                "nuclei": 0,
+                "quiet-module": 0,
+                "webhook": 0,
+                "dnsresolve": 1,
+                "SEED": 0,
+            },
+        },
+        {
+            "host": "example.org",
+            "open_ports": [80, 443],
+            "technologies": ["Apache"],
+            "module_counts": {
+                "fingerprintx": 2,
+                "http": 1,
+                "nuclei": 1,
+                "quiet-module": 0,
+                "webhook": 0,
+                "dnsresolve": 0,
+                "SEED": 0,
+            },
+        },
     ]
     assert snapshot["open_ports"] == [
         {"host": "example.org", "port": 80},
         {"host": "example.org", "port": 443},
     ]
     assert snapshot["technologies"] == [{"name": "Apache", "host_count": 1, "hosts": ["example.org"]}]
+    assert [module["name"] for module in snapshot["module_results"]] == [
+        "fingerprintx",
+        "http",
+        "nuclei",
+        "quiet-module",
+        "webhook",
+        "dnsresolve",
+        "SEED",
+    ]
+    assert snapshot["module_event_count"] == 6
+    assert next(module for module in snapshot["module_results"] if module["name"] == "quiet-module")["status"] == (
+        "no observed results"
+    )
     for format in ("html", "pdf", "csv", "json"):
         path = write_report(snapshot, format, tmp_path / f"report.{format}")
         assert path.is_file() and path.stat().st_size > 100
@@ -112,8 +240,18 @@ async def test_report_exports_and_redacts_preset_secrets(tmp_path):
         rows = list(csv.DictReader(stream))
     assert any(row["record_type"] == "priority_finding" for row in rows)
     assert any(row["record_type"] == "asset" and row["host"] == "example.org" for row in rows)
+    assert any(
+        row["record_type"] == "asset_module_count"
+        and row["host"] == "example.org"
+        and row["module"] == "fingerprintx"
+        and row["count"] == "2"
+        for row in rows
+    )
     assert any(row["record_type"] == "open_port" and row["name"] == "443" for row in rows)
     assert any(row["record_type"] == "technology" and row["name"] == "Apache" for row in rows)
+    assert any(row["record_type"] == "preset" and "[REDACTED]" in row["description"] for row in rows)
+    assert any(row["record_type"] == "module_summary" and row["module"] == "quiet-module" for row in rows)
+    assert any(row["record_type"] == "module_result" and row["event_type"] == "URL" for row in rows)
     if shutil.which("pdftotext"):
         result = subprocess.run(
             ["pdftotext", str(tmp_path / "report.pdf"), "-"], capture_output=True, text=True, check=True

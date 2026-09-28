@@ -396,9 +396,30 @@ Reports are saved in `~/bbot-reports/`. The HTML and PDF versions are suitable
 for sharing; CSV and JSON provide the same structured inventory data
 for further analysis. Reports include in-scope asset and finding totals, a
 severity breakdown, discovered assets with their open ports, technologies, and
-all active findings. They exclude ignored and archived findings. **A report is a current target inventory
-snapshot**, which may include findings from other scans of the same target;
-the selected scan supplies the target, preset, and timing shown on the report.
+all active findings. They exclude ignored and archived findings. Reports
+exported from a scan also include scan-scoped module coverage. It groups every
+stored event by the module that produced it, includes configured modules that
+produced no events, and labels modules discovered through dependencies or
+automatic selection. A module with no observed events may have completed
+without results, been skipped, or failed before producing evidence; the report
+does not claim which happened. Sensitive and oversized raw event fields are
+omitted. In HTML reports, module names link to collapsible result sections and
+each section has a field search that filters its event rows. Preset modules are
+listed before modules enabled automatically or as dependencies. The discovered
+assets table also adds one column per module and counts the selected scan's
+events whose host exactly matches each asset; zero counts are shown as a dash.
+CSV exports represent the same data as `asset_module_count` rows, while JSON
+stores it in each asset's `module_counts` object.
+
+The scope and methodology section includes the effective module list and a
+structured copy of the saved preset. Credential-like preset values are replaced
+with `[REDACTED]`; reports never contain the unmodified credential-bearing
+preset.
+
+**The asset and finding portion of a report is a current target inventory
+snapshot**, which may include findings from other scans of the same target. The
+module results are limited to events from the selected scan; the selected scan
+also supplies the target, preset, and timing shown on the report.
 
 The **Reports** tab (`o`) can create the same four formats for any existing
 target or a domain/subdomain, without selecting a scan. Choose one scope to
