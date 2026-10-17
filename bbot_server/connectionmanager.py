@@ -49,7 +49,7 @@ class ConnectionManager:
                     # If this is a response to a pending request, resolve it
                     try:
                         future = self.pending_requests.pop(message.request_id)
-                        future.set_result(message.response)
+                        future.set_result(message)
                     except KeyError:
                         # otherwise, yield the message to the caller
                         yield message
@@ -125,7 +125,11 @@ class ConnectionManager:
             # Wait for response with timeout
             try:
                 response = await asyncio.wait_for(future, timeout=timeout)
-                return AgentResponse(request_id=request.request_id, response=response)
+                if isinstance(response, AgentResponse):
+                    if response.request_id is None:
+                        response.request_id = request.request_id
+                    return response
+                return AgentResponse(request_id=request.request_id, response=response or {})
 
             except Exception as e:
                 error = f"Error waiting for response to command '{command}' on {agent_id}: {e}"

@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 
 from bbot.constants import get_scan_status_code, get_scan_status_name, SCAN_STATUS_QUEUED
 
-from bbot_server.modules.agents.agents_models import Agent
+from bbot_server.modules.agents.agents_models import Agent, AgentLogEntry
+from bbot_server.modules.agents.log_buffer import AgentLogBuffer
 from bbot_server.applets.base import BaseApplet, api_endpoint
 
 
@@ -30,6 +31,7 @@ class AgentsApplet(BaseApplet):
 
             # manage incoming agent connections
             self.connection_manager = ConnectionManager()
+            self.log_buffer = AgentLogBuffer()
             # watch the
             self.kickoff_queued_scans_task = self.create_task(self._kickoff_queued_scans_loop())
         return True, ""
@@ -101,6 +103,13 @@ class AgentsApplet(BaseApplet):
             raise self.BBOTServerValueError(command_response.error)
         return command_response.response
 
+    @api_endpoint("/logs", methods=["GET"], summary="List recent agent and scan logs")
+    async def get_agent_logs(self, limit: int = 500, after: int = 0) -> list[AgentLogEntry]:
+        self.ensure_main_server()
+        if not hasattr(self, "log_buffer"):
+            self.log_buffer = AgentLogBuffer()
+        return [AgentLogEntry(**entry) for entry in self.log_buffer.recent(limit=limit, after=after)]
+
     @api_endpoint("/online", methods=["GET"], summary="Get all online agents", mcp=True)
     async def get_online_agents(self, status: str = "READY") -> list[Agent]:
         agents = await self.collection.find({"status": status}).to_list(length=None)
@@ -144,6 +153,14 @@ class AgentsApplet(BaseApplet):
             async for message in self.connection_manager.loop(agent.id, websocket):
                 try:
                     self.log.debug(f"Server received gratuitous message from agent {agent.name}: {message}")
+                    log_entry = message.response.get("log") if isinstance(message.response, dict) else None
+                    if isinstance(log_entry, dict):
+                        log_entry["agent_id"] = str(agent.id)
+                        log_entry["agent_name"] = agent.name
+                        if not hasattr(self, "log_buffer"):
+                            self.log_buffer = AgentLogBuffer()
+                        self.log_buffer.append(log_entry)
+                        continue
                     if "agent_status" in message.response:
                         agent_status = message.response["agent_status"]
                         scan_status_code = message.response.get("scan_status_code", SCAN_STATUS_QUEUED)

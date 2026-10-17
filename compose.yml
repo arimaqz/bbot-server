@@ -40,9 +40,24 @@ services:
 
   agent:
     <<: *bbot-server-base
-    command: ["bash", "/app/bbot_server/default_agent.sh"]
+    user: root
+    command:
+      - bash
+      - -lc
+      - >-
+        printf '%s\n' 'bbot ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/bbot
+        && chmod 440 /etc/sudoers.d/bbot
+        && mkdir -p /home/bbot/.bbot
+        && chown -R bbot:bbot /home/bbot/.bbot
+        && exec runuser -u bbot -- env HOME=/home/bbot PATH=/app/.venv/bin:/usr/local/bin:/usr/bin:/bin bash /app/bbot_server/default_agent.sh
     environment:
       - BBOT_SERVER_RECONCILE_INDEXES=false
+    volumes:
+      - "${BBOT_SERVER_CONFIG:-~/.config/bbot_server/config.yml}:/home/bbot/.config/bbot_server/config.yml"
+      - "${BBOT_REPORTS_DIR:-~/bbot-reports}:/home/bbot/bbot-reports"
+      - ./bbot_server:/app/bbot_server
+      - ./bbot_server/defaults_docker.yml:/app/bbot_server/defaults.yml
+      - bbot-agent-home:/home/bbot/.bbot
     depends_on:
       server:
         condition: service_healthy
@@ -60,3 +75,6 @@ services:
   redis:
     image: redis:latest
     restart: unless-stopped
+
+volumes:
+  bbot-agent-home:

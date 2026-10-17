@@ -196,89 +196,101 @@ class ScansApplet(BaseApplet):
         await self.collection.delete_one({"id": str(scan.id)})
 
     async def start_scans_loop(self):
+        while True:
+            try:
+                await self._dispatch_queued_scans()
+            except Exception as e:
+                self.log.error(f"Error in scans loop: {e}")
+                self.log.error(traceback.format_exc())
+            await self.sleep(1)
+
+    async def _dispatch_queued_scans(self) -> None:
+        queued_scans = await self.get_queued_scans()
+        if not queued_scans:
+            return
+        self.log.info(f"Found {len(queued_scans):,} queued scans")
+        ready_agents = {str(agent.id): agent for agent in await self.get_online_agents(status="READY")}
+        if not ready_agents:
+            self.log.warning("No agents are currently ready")
+            return
+        self.log.info(f"Found {len(ready_agents):,} ready agents")
+        for scan in queued_scans:
+            try:
+                await self._dispatch_single_scan(scan, ready_agents)
+            except Exception as e:
+                self.log.error(f"Failed to dispatch scan {scan.name}: {e}")
+                self.log.error(traceback.format_exc())
+
+    async def _dispatch_single_scan(self, scan: Scan, ready_agents: dict) -> None:
+        selected_agent = await self._select_ready_agent(scan, ready_agents)
+        if selected_agent is None:
+            return
+
+        agent_id = str(selected_agent.id)
+        ready_agents.pop(agent_id, None)
+
+        self.log.info(f"Selected agent: {selected_agent.name}")
+
+        await self.collection.update_one({"id": str(scan.id)}, {"$set": {"agent_id": agent_id}})
+
+        scan_preset = dict(scan.preset.preset)
+        scan_preset["scan_name"] = scan.name
+        scan_preset["target"] = scan.target.target
+        scan_preset["seeds"] = scan.target.seeds
+        scan_preset["blacklist"] = scan.target.blacklist
+        config = scan_preset.get("config", {})
+        scope_config = config.get("scope", {})
+        scope_config["strict"] = scan.target.strict_scope
+        config["scope"] = scope_config
+        scan_preset["config"] = config
+
+        scan_start_response = await self.execute_agent_command(
+            agent_id, "start_scan", scan_id=scan.id, preset=scan_preset
+        )
+        if scan_start_response.error:
+            self.log.warning(f"Error sending scan to agent: {scan_start_response.error}")
+            await self.collection.update_one(
+                {"id": str(scan.id)},
+                {"$set": {"status": "FAILED", "status_code": SCAN_STATUS_FAILED}},
+            )
+            await self.emit_activity(
+                type="SCAN_STATUS",
+                description=f"Scan [[COLOR]{scan.name}[/COLOR]] failed to start",
+                detail={
+                    "scan_id": scan.id,
+                    "scan_name": scan.name,
+                    "agent_id": agent_id,
+                    "scan_status": "FAILED",
+                    "scan_status_code": SCAN_STATUS_FAILED,
+                    "error": scan_start_response.error,
+                },
+            )
+            return
+
+        await self.emit_activity(
+            type="SCAN_SENT",
+            description=f"Scan [[COLOR]{scan.name}[/COLOR]] sent to agent [[bold]{selected_agent.name}[/bold]]",
+            detail={"scan_id": scan.id, "agent_id": agent_id},
+        )
+        await self.collection.update_one({"id": str(scan.id)}, {"$set": {"status": "SENT_TO_AGENT"}})
+
+    async def _select_ready_agent(self, scan: Scan, ready_agents: dict):
+        if scan.agent_id is None:
+            if not ready_agents:
+                return None
+            return random.choice(list(ready_agents.values()))
+
+        agent_id = str(scan.agent_id)
+        if agent_id in ready_agents:
+            return ready_agents[agent_id]
+
+        self.log.warning(f"Agent {scan.agent_id} was selected for a scan, but it is not ready")
         try:
-            while True:
-                # get all queued scans
-                queued_scans = await self.get_queued_scans()
-                if not queued_scans:
-                    await self.sleep(1)
-                    continue
-                self.log.info(f"Found {len(queued_scans):,} queued scans")
-                # get all alive agents
-                ready_agents = {str(agent.id): agent for agent in await self.get_online_agents(status="READY")}
-                if not ready_agents:
-                    self.log.warning("No agents are currently ready")
-                    await self.sleep(1)
-                    continue
-                self.log.info(f"Found {len(ready_agents):,} ready agents")
-                for scan in queued_scans:
-                    # find a suitable agent for the scan
-                    if scan.agent_id is None:
-                        selected_agent = random.choice(list(ready_agents.values()))
-                    else:
-                        try:
-                            selected_agent = ready_agents[str(scan.agent_id)]
-                        except KeyError:
-                            self.log.warning(f"Agent {scan.agent_id} was selected for a scan, but it is not online")
-                            # check if agent doesn't exist anymore. if so, we'll clear it from the scan.
-                            try:
-                                selected_agent = await self.root.get_agent(str(scan.agent_id))
-                            except self.BBOTServerNotFoundError:
-                                self.log.warning(f"Scan's agent no longer exists. Clearing agent from scan")
-                                await self.collection.update_one({"id": str(scan.id)}, {"$set": {"agent_id": None}})
-                                continue
-
-                    self.log.info(f"Selected agent: {selected_agent.name}")
-
-                    # assign the agent to the scan
-                    await self.collection.update_one(
-                        {"id": str(scan.id)}, {"$set": {"agent_id": str(selected_agent.id)}}
-                    )
-
-                    # merge target and preset
-                    scan_preset = dict(scan.preset.preset)
-                    scan_preset["scan_name"] = scan.name
-                    scan_preset["target"] = scan.target.target
-                    scan_preset["seeds"] = scan.target.seeds
-                    scan_preset["blacklist"] = scan.target.blacklist
-                    config = scan_preset.get("config", {})
-                    scope_config = config.get("scope", {})
-                    scope_config["strict"] = scan.target.strict_scope
-                    config["scope"] = scope_config
-                    scan_preset["config"] = config
-
-                    # send the scan to the agent
-                    scan_start_response = await self.execute_agent_command(
-                        str(selected_agent.id), "start_scan", scan_id=scan.id, preset=scan_preset
-                    )
-                    if scan_start_response.error:
-                        self.log.warning(f"Error sending scan to agent: {scan_start_response.error}")
-                        await self.emit_activity(
-                            type="SCAN_STATUS",
-                            description=f"Scan [[COLOR]{scan.name}[/COLOR]] failed to start",
-                            detail={
-                                "scan_id": scan.id,
-                                "scan_name": scan.name,
-                                "agent_id": str(selected_agent.id),
-                                "scan_status": "FAILED",
-                                "scan_status_code": SCAN_STATUS_FAILED,
-                                "error": scan_start_response.error,
-                            },
-                        )
-                        await self.sleep(1)
-                        continue
-
-                    await self.emit_activity(
-                        type="SCAN_SENT",
-                        description=f"Scan [[COLOR]{scan.name}[/COLOR]] sent to agent [[bold]{selected_agent.name}[/bold]]",
-                        detail={"scan_id": scan.id, "agent_id": str(selected_agent.id)},
-                    )
-                    # make the scan as sent
-                    await self.collection.update_one({"id": str(scan.id)}, {"$set": {"status": "SENT_TO_AGENT"}})
-
-        except Exception as e:
-            self.log.error(f"Error in scans loop: {e}")
-            self.log.error(traceback.format_exc())
+            await self.root.get_agent(agent_id)
+        except self.BBOTServerNotFoundError:
+            self.log.warning("Scan's agent no longer exists. Clearing agent from scan")
+            await self.collection.update_one({"id": str(scan.id)}, {"$set": {"agent_id": None}})
+        return None
 
     async def handle_event(self, event, asset) -> list[Activity]:
         """
@@ -308,30 +320,26 @@ class ScansApplet(BaseApplet):
         existing_status_code = get_scan_status_code(getattr(existing_scan, "status_code", SCAN_STATUS_QUEUED))
         # if the scan already exists, update it
         if existing_scan:
-            # ignore if the new status is at or behind the existing one
+            timing_update = {}
+            if scan.started_at is not None:
+                timing_update["started_at"] = scan.started_at
+            if scan.finished_at is not None:
+                timing_update["finished_at"] = scan.finished_at
+            if scan.duration_seconds is not None:
+                timing_update["duration"] = scan.duration
+                timing_update["duration_seconds"] = scan.duration_seconds
+            if timing_update:
+                await self.collection.update_one({"id": scan_id}, {"$set": timing_update})
+
             if scan.status_code <= existing_status_code:
                 return []
+
             existing_status = get_scan_status_name(existing_status_code)
             description = f"Scan [[COLOR]{scan.name}[/COLOR]] status changed from [bold]{existing_status}[/bold] to [bold]{scan.status}[/bold]"
             agent_id = getattr(existing_scan, "agent_id", None)
             if agent_id is not None:
                 detail["agent_id"] = agent_id
-            if scan.duration_seconds:
-                await self.collection.update_one(
-                    {"id": scan_id},
-                    {
-                        "$set": {
-                            "started_at": scan.started_at,
-                            "finished_at": scan.finished_at,
-                            "duration": scan.duration,
-                            "duration_seconds": scan.duration_seconds,
-                        }
-                    },
-                )
-                status_changed = await self.update_scan_status(scan_id=scan_id, status_code=scan.status_code)
-            else:
-                self.log.warning(f'Scan "{scan.name}" found in database, but event has no duration_seconds')
-                status_changed = False
+            status_changed = await self.update_scan_status(scan_id=scan_id, status_code=scan.status_code)
         # otherwise, assume the scan is starting and create a new run
         else:
             description = f"Scan [[COLOR]{scan.name}[/COLOR]] started"

@@ -2,6 +2,8 @@
 Scans screen for BBOT Server TUI
 """
 
+import asyncio
+
 from textual.app import ComposeResult
 
 # Removed Screen import
@@ -16,7 +18,11 @@ from bbot_server.cli.tui.widgets.filter_bar import FilterBar
 from bbot_server.cli.tui.widgets.paginated_table import PaginatedTableContainer
 from bbot_server.cli.tui.utils.colors import loading_text, success_text, warning_text, error_text
 from bbot_server.cli.tui.screens.start_scan_modal import StartScanModal
+from rich.markup import escape as rich_escape
+
 from bbot_server.cli.tui.screens.confirm_modal import ConfirmModal
+from bbot_server.cli.tui.screens.scan_actions_modal import ScanActionsModal
+from bbot_server.modules.agents.log_buffer import dependency_banner
 
 
 class ScansScreen(Container):
@@ -35,6 +41,7 @@ class ScansScreen(Container):
         self.bbot_app = app
         self._refresh_timer = None
         self._has_loaded = False
+        self._agent_log_entries: list = []
 
     def compose(self) -> ComposeResult:
         """Create child widgets"""
@@ -46,6 +53,7 @@ class ScansScreen(Container):
 
             # Status bar
             yield Static("Loading scans...", id="scans-status", classes="status-bar")
+            yield Static("", id="dependency-status")
 
             # Main content: table on left, detail on right
             with Horizontal(id="scans-content", classes="content-area"):
@@ -55,8 +63,7 @@ class ScansScreen(Container):
                     )
                     with Grid(id="scan-actions", classes="action-buttons"):
                         yield Button("New Scan", id="new-scan-btn", variant="success")
-                        yield Button("Cancel Scan", id="cancel-scan-btn", variant="error", disabled=True)
-                        yield Button("Delete Scan", id="delete-scan-btn", variant="error", disabled=True)
+                        yield Button("Manage Scan", id="manage-scan-btn", variant="default", disabled=True)
                         yield Select(
                             [("HTML", "html"), ("PDF", "pdf"), ("CSV", "csv"), ("JSON", "json")],
                             value="html",
@@ -71,8 +78,11 @@ class ScansScreen(Container):
 
     async def on_mount(self) -> None:
         """Called when screen is mounted"""
-        # Start periodic refresh (paused until first load)
-        self._refresh_timer = self.set_interval(5.0, self.refresh_scans, pause=True)
+        # Interval callbacks must be sync; refresh_scans is async.
+        self._refresh_timer = self.set_interval(5.0, self._schedule_refresh_scans, pause=True)
+
+    def _schedule_refresh_scans(self) -> None:
+        self.refresh_scans()
 
     async def load_initial_data(self) -> None:
         """Load data on first visit to this tab"""
@@ -80,11 +90,19 @@ class ScansScreen(Container):
             return
 
         self._has_loaded = True
-        await self.refresh_scans(show_loading=True)
+        await self._wait_for_pagination_ready()
+        await self._refresh_scans_impl(show_loading=True)
 
-        # Resume periodic refresh
         if self._refresh_timer:
             self._refresh_timer.resume()
+
+    async def _wait_for_pagination_ready(self, attempts: int = 40) -> None:
+        """Auto page size is calculated after the tab has a real height."""
+        pagination = self.query_one("#scan-pagination", PaginatedTableContainer)
+        for _ in range(attempts):
+            if pagination.get_skip_limit() is not None:
+                return
+            await asyncio.sleep(0.05)
 
     async def on_unmount(self) -> None:
         """Called when screen is unmounted"""
@@ -92,7 +110,11 @@ class ScansScreen(Container):
         if self._refresh_timer:
             self._refresh_timer.stop()
 
+    @work(exclusive=True)
     async def refresh_scans(self, show_loading: bool = False) -> None:
+        await self._refresh_scans_impl(show_loading=show_loading)
+
+    async def _refresh_scans_impl(self, show_loading: bool = False) -> None:
         """Fetch and display scans from server with pagination
 
         Args:
@@ -126,9 +148,7 @@ class ScansScreen(Container):
             # Update table with current page of scans
             table = self.query_one("#scan-table", ScanTable)
             table.update_scans(scans)
-            self._update_selection(table.get_selected_scan())
 
-            # Update status (pagination widget shows page info, status shows filter info)
             if total > 0:
                 if self.filter_text:
                     status.update(success_text(f"Filtered: {total} scans match"))
@@ -136,11 +156,40 @@ class ScansScreen(Container):
                     status.update(success_text(f"{total} total scans"))
             else:
                 status.update(warning_text("No scans found"))
+            await self._update_dependency_status()
+            await self._fetch_agent_logs()
+            await self._update_selection(table.get_selected_scan())
 
         except Exception as e:
             # Show error
             status = self.query_one("#scans-status", Static)
-            status.update(error_text(f"Error loading scans: {e}"))
+            status.update(error_text(f"Error loading scans: {rich_escape(str(e))}"))
+
+    async def _fetch_agent_logs(self) -> None:
+        try:
+            entries = await self.bbot_app.data_service.get_agent_logs(limit=200)
+            self._agent_log_entries = [entry.model_dump() for entry in entries]
+        except Exception:
+            self._agent_log_entries = []
+
+    async def _update_dependency_status(self) -> None:
+        banner = self.query_one("#dependency-status", Static)
+        try:
+            entries = await self.bbot_app.data_service.get_agent_logs(limit=100)
+            message = dependency_banner([entry.model_dump() for entry in entries])
+        except Exception:
+            banner.update("")
+            return
+        if not message:
+            banner.update("")
+            return
+        message = rich_escape(message)
+        if message.startswith("Dependency install failed"):
+            banner.update(error_text(message))
+        elif message.startswith("Dependencies ready"):
+            banner.update(success_text(message))
+        else:
+            banner.update(warning_text(message))
 
     def on_data_table_row_highlighted(self, event) -> None:
         """Handle row selection in scan table"""
@@ -149,31 +198,22 @@ class ScansScreen(Container):
             return
 
         table = self.query_one("#scan-table", ScanTable)
-        self._update_selection(table.get_selected_scan())
+        self._schedule_update_selection(table.get_selected_scan())
 
-    def _update_selection(self, scan) -> None:
+    def _schedule_update_selection(self, scan) -> None:
+        self.run_worker(self._update_selection(scan), exclusive=True)
+
+    async def _update_selection(self, scan) -> None:
         """Keep details and actions synchronized with the current row."""
-        # Update detail panel
         detail = self.query_one("#scan-detail", ScanDetail)
-        detail.update_scan(scan)
+        detail.update_progress(scan, self._agent_log_entries)
 
-        # Update selected scan ID
         if scan:
             self.selected_scan_id = scan["id"]
         else:
             self.selected_scan_id = None
-        self.query_one("#cancel-scan-btn", Button).disabled = not scan or scan["status"] not in (
-            "QUEUED",
-            "STARTING",
-            "RUNNING",
-            "ABORTING",
-        )
+        self.query_one("#manage-scan-btn", Button).disabled = scan is None
         self.query_one("#report-scan-btn", Button).disabled = scan is None
-        self.query_one("#delete-scan-btn", Button).disabled = not scan or scan["status"] not in (
-            "FINISHED",
-            "FAILED",
-            "ABORTED",
-        )
 
     def on_filter_bar_filter_changed(self, event: FilterBar.FilterChanged) -> None:
         """Handle filter text changes"""
@@ -182,16 +222,17 @@ class ScansScreen(Container):
         pagination = self.query_one("#scan-pagination", PaginatedTableContainer)
         pagination.reset_to_first_page()
         # Trigger refresh with new filter (show loading since user-initiated)
-        self.run_worker(self.refresh_scans(show_loading=True))
+        self.refresh_scans(show_loading=True)
 
     def on_paginated_table_container_page_changed(self, event: PaginatedTableContainer.PageChanged) -> None:
         """Handle page navigation"""
-        self.run_worker(self.refresh_scans())
+        self.refresh_scans()
 
     def on_paginated_table_container_page_size_changed(self, event: PaginatedTableContainer.PageSizeChanged) -> None:
         """Handle page size changes from auto-sizing"""
-        # Refetch data with new page size
-        self.run_worker(self.refresh_scans())
+        if not self._has_loaded:
+            return
+        self.refresh_scans()
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses"""
@@ -199,10 +240,8 @@ class ScansScreen(Container):
             await self.action_refresh()
         elif event.button.id == "new-scan-btn":
             self.action_new_scan()
-        elif event.button.id == "cancel-scan-btn":
-            self.action_cancel_scan()
-        elif event.button.id == "delete-scan-btn":
-            self.action_delete_scan()
+        elif event.button.id == "manage-scan-btn":
+            self.action_manage_scan()
         elif event.button.id == "report-scan-btn":
             self.action_export_report()
 
@@ -220,17 +259,29 @@ class ScansScreen(Container):
             if options is not None:
                 scan = await self.bbot_app.data_service.start_scan(**options)
                 self.notify(f"Scan '{scan.name}' queued", timeout=4)
-                await self.refresh_scans()
+                await self._refresh_scans_impl()
         except Exception as exc:
             self.notify(f"Could not start scan: {exc}", severity="error", timeout=6)
 
-    def action_cancel_scan(self) -> None:
+    def action_manage_scan(self) -> None:
         scan = self.query_one("#scan-table", ScanTable).get_selected_scan()
-        if scan and scan["status"] in ("QUEUED", "STARTING", "RUNNING", "ABORTING"):
-            self._cancel_scan(scan)
+        if not scan:
+            return
+        self._manage_scan(scan)
 
     @work(exclusive=True)
-    async def _cancel_scan(self, scan) -> None:
+    async def _manage_scan(self, scan) -> None:
+        can_cancel = scan["status"] in ("QUEUED", "STARTING", "RUNNING", "ABORTING")
+        can_delete = scan["status"] in ("FINISHED", "FAILED", "ABORTED")
+        choice = await self.app.push_screen_wait(
+            ScanActionsModal(scan.get("name") or scan.get("id", ""), can_cancel, can_delete)
+        )
+        if choice == "cancel":
+            await self._perform_cancel_scan(scan)
+        elif choice == "delete":
+            await self._perform_delete_scan(scan)
+
+    async def _perform_cancel_scan(self, scan) -> None:
         confirmed = await self.app.push_screen_wait(
             ConfirmModal("Cancel Scan", f"Cancel scan '{scan['name']}'?", confirm_label="Cancel scan", danger=True)
         )
@@ -238,17 +289,11 @@ class ScansScreen(Container):
             try:
                 await self.bbot_app.data_service.cancel_scan(scan["id"])
                 self.notify(f"Cancellation requested for '{scan['name']}'", timeout=4)
-                await self.refresh_scans()
+                await self._refresh_scans_impl()
             except Exception as exc:
                 self.notify(f"Could not cancel scan: {exc}", severity="error", timeout=6)
 
-    def action_delete_scan(self) -> None:
-        scan = self.query_one("#scan-table", ScanTable).get_selected_scan()
-        if scan and scan["status"] in ("FINISHED", "FAILED", "ABORTED"):
-            self._delete_scan(scan)
-
-    @work(exclusive=True)
-    async def _delete_scan(self, scan) -> None:
+    async def _perform_delete_scan(self, scan) -> None:
         confirmed = await self.app.push_screen_wait(
             ConfirmModal(
                 "Delete Scan",
@@ -261,7 +306,7 @@ class ScansScreen(Container):
             try:
                 await self.bbot_app.data_service.delete_scan(scan["id"])
                 self.notify(f"Scan '{scan['name']}' deleted", timeout=4)
-                await self.refresh_scans()
+                await self._refresh_scans_impl()
             except Exception as exc:
                 self.notify(f"Could not delete scan: {exc}", severity="error", timeout=6)
 
@@ -283,7 +328,7 @@ class ScansScreen(Container):
 
     async def action_refresh(self) -> None:
         """Refresh scans"""
-        await self.refresh_scans(show_loading=True)
+        await self._refresh_scans_impl(show_loading=True)
         self.notify("Scans refreshed", timeout=2)
 
     def action_focus_filter(self) -> None:
@@ -300,4 +345,4 @@ class ScansScreen(Container):
         pagination = self.query_one("#scan-pagination", PaginatedTableContainer)
         pagination.reset_to_first_page()
         # Trigger refresh to show all scans
-        self.run_worker(self.refresh_scans())
+        self.refresh_scans()

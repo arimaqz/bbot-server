@@ -81,6 +81,9 @@ class DataService:
     async def get_presets(self):
         return await self._async_client.get_presets()
 
+    async def get_agent_logs(self, limit: int = 500, after: int = 0):
+        return await self._async_client.get_agent_logs(limit=limit, after=after)
+
     async def get_modules(self) -> List[dict[str, Any]]:
         """Return module metadata from the installed BBOT runtime."""
         return await asyncio.to_thread(self._get_modules)

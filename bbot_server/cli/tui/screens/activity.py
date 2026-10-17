@@ -64,7 +64,10 @@ class ActivityScreen(Container):
         self._has_loaded = True
 
         # Start trying to stream (will retry if services not ready)
-        self._start_timer = self.set_interval(1.0, self._try_start_streaming)
+        self._start_timer = self.set_interval(1.0, self._schedule_start_streaming)
+
+    def _schedule_start_streaming(self) -> None:
+        self.run_worker(self._try_start_streaming())
 
     async def on_unmount(self) -> None:
         """Called when screen is unmounted - stop streaming"""

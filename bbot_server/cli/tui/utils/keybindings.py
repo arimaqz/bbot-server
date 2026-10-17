@@ -19,90 +19,52 @@ class KeyBinding:
     priority: bool = False
 
 
-# Global navigation bindings (available on all screens)
-GLOBAL_BINDINGS: List[KeyBinding] = [
+PRIMARY_BINDINGS: List[KeyBinding] = [
     KeyBinding("q", "quit", "Quit", priority=True),
     KeyBinding("d", "show_dashboard", "Dashboard"),
     KeyBinding("s", "show_scans", "Scans"),
-    KeyBinding("a", "show_assets", "Assets"),
     KeyBinding("f", "show_findings", "Findings"),
-    KeyBinding("v", "show_activity", "Activity"),
+    KeyBinding("a", "show_assets", "Assets"),
+    KeyBinding("l", "show_logs", "Logs"),
+    KeyBinding("comma", "show_setup", "Setup"),
     KeyBinding("?", "show_help", "Help"),
 ]
 
+SETUP_BINDINGS: List[KeyBinding] = [
+    KeyBinding("e", "show_events", "Events (Setup)"),
+    KeyBinding("t", "show_technologies", "Technologies (Setup)"),
+    KeyBinding("r", "show_targets", "Targets (Setup)"),
+    KeyBinding("v", "show_activity", "Activity (Setup)"),
+    KeyBinding("p", "show_presets", "Presets (Setup)"),
+    KeyBinding("m", "show_modules", "Modules (Setup)"),
+    KeyBinding("g", "show_agents", "Agents (Setup)"),
+    KeyBinding("k", "show_keys", "API Keys (Setup)"),
+    KeyBinding("o", "show_reports", "Reports (Setup)"),
+    KeyBinding("u", "show_settings", "Settings (Setup)"),
+]
 
-# Screen-specific bindings
 SCAN_BINDINGS: List[KeyBinding] = [
-    KeyBinding("r", "refresh", "Refresh"),
-    KeyBinding("enter", "show_details", "Details"),
+    KeyBinding("n", "new_scan", "New scan"),
+    KeyBinding("enter", "manage_scan", "Manage scan"),
     KeyBinding("/", "focus_filter", "Filter"),
+    KeyBinding("refresh", "refresh", "Refresh"),
 ]
 
-ASSET_BINDINGS: List[KeyBinding] = [
-    KeyBinding("r", "refresh", "Refresh"),
-    KeyBinding("enter", "show_details", "Details"),
-    KeyBinding("/", "focus_filter", "Filter"),
-    KeyBinding("i", "toggle_inscope", "In-Scope Only"),
-]
-
-FINDING_BINDINGS: List[KeyBinding] = [
-    KeyBinding("r", "refresh", "Refresh"),
-    KeyBinding("enter", "show_details", "Details"),
-    KeyBinding("/", "focus_filter", "Filter"),
-    KeyBinding("1", "filter_info", "Show INFO"),
-    KeyBinding("2", "filter_low", "Show LOW+"),
-    KeyBinding("3", "filter_medium", "Show MEDIUM+"),
-    KeyBinding("4", "filter_high", "Show HIGH+"),
-    KeyBinding("5", "filter_critical", "Show CRITICAL"),
-]
-
-ACTIVITY_BINDINGS: List[KeyBinding] = [
-    KeyBinding("space", "toggle_pause", "Pause/Resume"),
-    KeyBinding("c", "clear_feed", "Clear"),
-    KeyBinding("/", "focus_filter", "Filter"),
-    KeyBinding("r", "refresh", "Refresh"),
-]
-
-DASHBOARD_BINDINGS: List[KeyBinding] = [
-    KeyBinding("r", "refresh", "Refresh"),
-]
+# Legacy alias
+GLOBAL_BINDINGS = PRIMARY_BINDINGS
 
 
 def get_bindings_for_screen(screen_name: str) -> List[KeyBinding]:
-    """
-    Get keyboard bindings for a specific screen
-
-    Args:
-        screen_name: Name of the screen
-
-    Returns:
-        List of KeyBinding objects
-    """
     screen_bindings = {
         "scans": SCAN_BINDINGS,
-        "assets": ASSET_BINDINGS,
-        "findings": FINDING_BINDINGS,
-        "activity": ACTIVITY_BINDINGS,
-        "dashboard": DASHBOARD_BINDINGS,
+        "dashboard": [KeyBinding("refresh", "refresh", "Refresh")],
     }
-
     return screen_bindings.get(screen_name, [])
 
 
 def format_key_hint(bindings: List[KeyBinding], max_hints: int = 8) -> str:
-    """
-    Format key bindings as a hint string for status bar
-
-    Args:
-        bindings: List of KeyBinding objects
-        max_hints: Maximum number of hints to show
-
-    Returns:
-        Formatted hint string (e.g., "n:New r:Refresh ?:Help")
-    """
     hints = []
     for binding in bindings[:max_hints]:
-        # Use short key names
         key = binding.key
         if key == "enter":
             key = "↵"
@@ -110,36 +72,31 @@ def format_key_hint(bindings: List[KeyBinding], max_hints: int = 8) -> str:
             key = "␣"
         elif key == "escape":
             key = "Esc"
-
         hints.append(f"{key}:{binding.description}")
-
     return " ".join(hints)
 
 
 def get_help_text(screen_name: str = None) -> str:
-    """
-    Get formatted help text for keyboard shortcuts
-
-    Args:
-        screen_name: Optional screen name for screen-specific help
-
-    Returns:
-        Multi-line help text
-    """
-    lines = ["Keyboard Shortcuts", "=" * 40, ""]
-
-    # Global bindings
-    lines.append("Global:")
-    for binding in GLOBAL_BINDINGS:
+    lines = ["Primary navigation", "=" * 40, ""]
+    for binding in PRIMARY_BINDINGS:
         lines.append(f"  {binding.key:15} {binding.description}")
 
-    # Screen-specific bindings
-    if screen_name:
-        screen_bindings = get_bindings_for_screen(screen_name)
-        if screen_bindings:
-            lines.append("")
-            lines.append(f"{screen_name.title()} Screen:")
-            for binding in screen_bindings:
-                lines.append(f"  {binding.key:15} {binding.description}")
+    lines.extend(["", "Scans screen", "=" * 40, ""])
+    for binding in SCAN_BINDINGS:
+        lines.append(f"  {binding.key:15} {binding.description}")
 
+    lines.extend(["", "Setup tab (open with comma key)", "=" * 40, ""])
+    for binding in SETUP_BINDINGS:
+        lines.append(f"  {binding.key:15} {binding.description}")
+
+    lines.extend(
+        [
+            "",
+            "Tips",
+            "=" * 40,
+            "  Enter on Dashboard rows opens Scans or Findings.",
+            "  Scan details show dependency progress and recent logs.",
+            "  Cancel/Delete live under Manage scan (Enter on Scans).",
+        ]
+    )
     return "\n".join(lines)

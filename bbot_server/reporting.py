@@ -31,15 +31,36 @@ SENSITIVE_EVENT_KEYS = {
 }
 SENSITIVE_PRESET_KEYS = {
     "api_key",
+    "api_keys",
     "apikey",
     "api_token",
+    "api_tokens",
     "authorization",
     "cookie",
+    "cookies",
     "credentials",
     "password",
     "private_key",
     "secret",
+    "secrets",
     "token",
+    "tokens",
+    "http_headers",
+    "headers",
+    "default_headers",
+}
+SAFE_PRESET_EXPORT_KEYS = {
+    "name",
+    "description",
+    "scan_name",
+    "modules",
+    "output_modules",
+    "flags",
+    "config",
+    "scope",
+    "require_flags",
+    "exclude_flags",
+    "module_dirs",
 }
 EVENT_SUMMARY_KEYS = (
     "name",
@@ -96,18 +117,36 @@ def _configured_modules(scan):
     return _preset_module_names(preset_record.get("preset") or {})
 
 
+def _preset_key_sensitive(normalized: str) -> bool:
+    if normalized in SENSITIVE_PRESET_KEYS:
+        return True
+    if normalized.endswith("_key") or normalized.endswith("_keys"):
+        return True
+    if normalized.endswith("_token") or normalized.endswith("_tokens"):
+        return True
+    if normalized.endswith("_secret") or normalized.endswith("_secrets"):
+        return True
+    return any(normalized.endswith(f"_{name}") for name in SENSITIVE_PRESET_KEYS)
+
+
 def _safe_preset_value(value, depth=0):
     """Preserve preset structure while replacing likely credentials."""
     if depth > 8:
         return "…"
     if isinstance(value, dict):
         cleaned = {}
-        for key, item in value.items():
+        items = value.items()
+        if depth == 0:
+            items = ((key, item) for key, item in value.items() if str(key) in SAFE_PRESET_EXPORT_KEYS)
+        for key, item in items:
             normalized = str(key).lower().replace("-", "_")
-            sensitive = normalized in SENSITIVE_PRESET_KEYS or any(
-                normalized.endswith(f"_{name}") for name in SENSITIVE_PRESET_KEYS
-            )
-            cleaned[str(key)] = "[REDACTED]" if sensitive else _safe_preset_value(item, depth + 1)
+            if _preset_key_sensitive(normalized):
+                if normalized in {"http_headers", "headers", "default_headers"} and isinstance(item, dict):
+                    cleaned[str(key)] = {str(header): "[REDACTED]" for header in item}
+                else:
+                    cleaned[str(key)] = "[REDACTED]"
+            else:
+                cleaned[str(key)] = _safe_preset_value(item, depth + 1)
         return cleaned
     if isinstance(value, (list, tuple, set)):
         return [_safe_preset_value(item, depth + 1) for item in value]

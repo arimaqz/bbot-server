@@ -97,6 +97,7 @@ class BBOTServerSettings(BaseSettings):
 
     # runtime-only cache of parsed API keys
     _valid_api_keys: Set[uuid.UUID] = PrivateAttr(default_factory=set)
+    _config_mtime: float = PrivateAttr(default=0.0)
 
     # defaults + env wiring
     model_config = SettingsConfigDict(
@@ -136,12 +137,25 @@ class BBOTServerSettings(BaseSettings):
             file_secret_settings,
         )
 
+    def _config_file_mtime(self) -> float:
+        try:
+            return BBOT_SERVER_CONFIG_PATH.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    def sync_config_if_changed(self) -> None:
+        """Reload YAML when another process updates the config file (e.g. key revoke)."""
+        mtime = self._config_file_mtime()
+        if mtime != self._config_mtime:
+            self.refresh()
+
     def refresh(self, **overrides):
         """
         Re-read the config from disk and environment.
         """
         self.__init__(**overrides)
         self.refresh_api_keys()
+        self._config_mtime = self._config_file_mtime()
 
     def refresh_api_keys(self) -> None:
         """
@@ -170,6 +184,7 @@ class BBOTServerSettings(BaseSettings):
         """
         Return the set of valid API keys.
         """
+        self.sync_config_if_changed()
         if not self._valid_api_keys:
             self.refresh_api_keys()
         return self._valid_api_keys
@@ -178,6 +193,7 @@ class BBOTServerSettings(BaseSettings):
         """
         Return a single API key string, preferring the explicit api_key field.
         """
+        self.sync_config_if_changed()
         if not self._valid_api_keys:
             self.refresh_api_keys()
         # prioritize single api key if set
@@ -208,11 +224,9 @@ class BBOTServerSettings(BaseSettings):
         except Exception:
             return False, "API key must be a valid UUID"
 
-        # if the API key is invalid, try refreshing the config
+        self.sync_config_if_changed()
         if parsed not in self._valid_api_keys:
-            self.refresh()
-            if parsed not in self._valid_api_keys:
-                return False, f'Invalid API key "{api_key}"'
+            return False, f'Invalid API key "{api_key}"'
         return True, "Valid API key"
 
     def add_api_key(self) -> uuid.UUID:

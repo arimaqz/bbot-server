@@ -12,7 +12,10 @@ def test_compose_starts_default_scan_agent(compose_path):
     compose = yaml.safe_load(compose_path.read_text())
     agent = compose["services"]["agent"]
 
-    assert agent["command"] == ["bash", "/app/bbot_server/default_agent.sh"]
+    assert agent["user"] == "root"
+    assert agent["command"][:2] == ["bash", "-lc"]
+    assert "runuser -u bbot -- env HOME=/home/bbot PATH=/app/.venv/bin:/usr/local/bin:/usr/bin:/bin bash /app/bbot_server/default_agent.sh" in agent["command"][2]
+    assert "bbot-agent-home:/home/bbot/.bbot" in agent["volumes"]
     assert agent["depends_on"]["server"]["condition"] == "service_healthy"
 
 
@@ -32,7 +35,9 @@ def test_image_prepares_writable_bbot_config_directory():
     dockerfile = (PROJECT_ROOT / "Dockerfile").read_text()
 
     assert "p7zip-full" in dockerfile
-    assert "mkdir -p /home/bbot/.config/bbot" in dockerfile
+    assert "sudo" in dockerfile
+    assert "install-all-deps" not in dockerfile
+    assert "mkdir -p /home/bbot/.config/bbot /home/bbot/.bbot" in dockerfile
     assert "chown -R bbot:bbot /home/bbot" in dockerfile
 
 

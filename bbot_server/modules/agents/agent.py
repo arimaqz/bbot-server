@@ -14,6 +14,7 @@ from bbot.scanner.dispatcher import Dispatcher
 from bbot.constants import get_scan_status_code, get_scan_status_name, SCAN_STATUS_NOT_STARTED, SCAN_STATUS_FAILED
 
 from bbot_server.errors import BBOTServerValueError
+from bbot_server.modules.agents.log_forwarder import attach_log_handler, forward_logs
 from bbot_server.utils.async_utils import async_to_sync_class
 from bbot_server.modules.agents.agents_models import AgentResponse
 
@@ -88,12 +89,26 @@ class BBOTAgent:
         self._agent_task = None
 
         self.dispatcher = AgentDispatcher(self)
+        self._log_handler = attach_log_handler()
+        self._log_task = None
+        self._ws_send_lock = asyncio.Lock()
+
+    async def send_agent_message(self, payload: AgentResponse) -> None:
+        if self.websocket is None:
+            raise ConnectionError("agent websocket is not connected")
+        async with self._ws_send_lock:
+            await self.websocket.send(orjson.dumps(payload.model_dump()))
 
     async def start(self):
         self.log.info(f"Starting agent {self.name} ({self.id})")
+        self._log_task = asyncio.create_task(forward_logs(self, self._log_handler))
         self._agent_task = asyncio.create_task(self.loop())
 
     async def stop(self):
+        if self._log_task is not None:
+            self._log_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._log_task
         if self._agent_task is None:
             return
         self._agent_task.cancel()
@@ -229,6 +244,8 @@ class BBOTAgent:
         return default_preset
 
     async def loop(self):
+        if self._log_task is None:
+            self._log_task = asyncio.create_task(forward_logs(self, self._log_handler))
         try:
             while True:
                 self.log.info(f"Agent {self.name} connecting to {self.websocket_dock_url}...")
@@ -276,7 +293,7 @@ class BBOTAgent:
                                 response = AgentResponse(request_id=request_id, error=error)
 
                             self.log.debug(f"Agent {self.name} sending response: {response}")
-                            await websocket.send(orjson.dumps(response.model_dump()))
+                            await self.send_agent_message(response)
 
                 except websockets.ConnectionClosed:
                     self.log.error("Connection closed, attempting to reconnect...")
@@ -321,8 +338,7 @@ class BBOTAgent:
             except Exception as e:
                 self.log.error(f"Error getting scan status detail: {e}")
                 self.log.error(traceback.format_exc())
-        agent_status = AgentResponse(response=status)
-        await self.websocket.send(orjson.dumps(agent_status.model_dump()))
+        await self.send_agent_message(AgentResponse(response=status))
 
     def _patch_scan(self, scan):
         """

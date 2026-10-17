@@ -22,6 +22,20 @@ class AgentCommand(BaseModel):
     kwargs: dict[str, Any]
 
 
+class AgentLogEntry(BaseModel):
+    id: int
+    timestamp: float
+    level: str
+    logger: str
+    message: str
+    agent_id: str = ""
+    agent_name: str = ""
+    scan_id: Optional[str] = None
+    scan_name: Optional[str] = None
+    dependency: bool = False
+    phase: Optional[str] = None
+
+
 class AgentResponse(BaseModel):
     request_id: Optional[str] = None
     response: dict[str, Any] = {}

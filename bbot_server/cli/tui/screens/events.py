@@ -50,7 +50,10 @@ class EventsScreen(Container):
     async def on_mount(self) -> None:
         """Called when screen is mounted"""
         # Start periodic refresh (paused until first load)
-        self._refresh_timer = self.set_interval(10.0, self.refresh_events, pause=True)
+        self._refresh_timer = self.set_interval(10.0, self._schedule_refresh, pause=True)
+
+    def _schedule_refresh(self) -> None:
+        self.run_worker(self.refresh_events())
 
     async def load_initial_data(self) -> None:
         """Load data on first visit to this tab"""

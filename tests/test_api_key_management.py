@@ -26,3 +26,28 @@ def test_revoke_primary_key_persists_and_preserves_last_key(tmp_path, monkeypatc
     with pytest.raises(BBOTServerValueError, match="last API key"):
         config.revoke_api_key(additional)
     assert yaml.safe_load(config_file.read_text()) == {"api_keys": [additional]}
+
+
+def test_revoked_key_rejected_after_config_file_changes(tmp_path, monkeypatch):
+    import time
+
+    import bbot_server.config as config_module
+
+    primary = "11111111-1111-1111-1111-111111111111"
+    backup = "22222222-2222-2222-2222-222222222222"
+    config_file = tmp_path / "config.yml"
+    config_file.write_text(yaml.safe_dump({"api_keys": [primary, backup]}))
+    monkeypatch.setattr(config_module, "BBOT_SERVER_CONFIG_PATH", config_file)
+
+    server_config = config_module.BBOTServerSettings()
+    server_config.refresh()
+
+    ok, _ = server_config.check_api_key(primary)
+    assert ok is True
+
+    config_file.write_text(yaml.safe_dump({"api_keys": [backup]}))
+    time.sleep(0.01)
+
+    ok, message = server_config.check_api_key(primary)
+    assert ok is False
+    assert "Invalid API key" in message

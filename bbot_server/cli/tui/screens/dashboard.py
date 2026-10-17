@@ -6,10 +6,13 @@ from textual.app import ComposeResult
 
 # Removed Screen import
 from textual.containers import Container, Horizontal, Vertical, Grid
+from textual.coordinate import Coordinate
 from textual.widgets import Static, Button, DataTable
+from rich.markup import escape as rich_escape
 
 from bbot_server.cli.tui.utils.formatters import format_number, format_timestamp_short
-from bbot_server.cli.tui.utils.colors import colorize_severity, colorize_status, success_text, error_text
+from bbot_server.cli.tui.utils.colors import colorize_severity, colorize_status, success_text, error_text, warning_text
+from bbot_server.modules.agents.log_buffer import dependency_banner
 
 
 class DashboardScreen(Container):
@@ -56,29 +59,33 @@ class DashboardScreen(Container):
                     classes="stat-card",
                 )
 
-            # Status message
+            yield Static("", id="dashboard-onboarding", classes="onboarding-banner")
             yield Static("Loading...", id="dashboard-status")
+            yield Static("", id="dashboard-dependency")
 
             # Two-column layout for lists
             with Horizontal(id="dashboard-lists"):
                 # Recent findings sorted by severity
                 with Vertical(id="findings-section"):
                     yield Static("[bold]Recent Findings (by Severity)[/bold]", classes="section-title")
-                    findings_table = DataTable(id="recent-findings-table", show_cursor=False)
+                    findings_table = DataTable(id="recent-findings-table", cursor_type="row")
                     findings_table.add_columns("Severity", "Name", "Host", "When")
                     yield findings_table
 
                 # Recent scans
                 with Vertical(id="scans-section"):
                     yield Static("[bold]Recent Scans[/bold]", classes="section-title")
-                    scans_table = DataTable(id="recent-scans-table", show_cursor=False)
+                    scans_table = DataTable(id="recent-scans-table", cursor_type="row")
                     scans_table.add_columns("Name", "Status", "Target", "Started")
                     yield scans_table
 
     async def on_mount(self) -> None:
         """Called when screen is mounted"""
         # Start periodic refresh (paused until first load)
-        self._refresh_timer = self.set_interval(5.0, self.refresh_dashboard, pause=True)
+        self._refresh_timer = self.set_interval(5.0, self._schedule_refresh, pause=True)
+
+    def _schedule_refresh(self) -> None:
+        self.run_worker(self.refresh_dashboard())
 
     async def load_initial_data(self) -> None:
         """Load data on first visit to this tab"""
@@ -125,14 +132,63 @@ class DashboardScreen(Container):
             # Update recent scans
             await self.update_recent_scans()
 
-            # Update status
             status = self.query_one("#dashboard-status", Static)
             status.update(success_text("● Connected"))
+            await self._update_dependency_status()
+            await self._update_onboarding(scan_count, asset_count, finding_count)
 
         except Exception as e:
             # Show error
             status = self.query_one("#dashboard-status", Static)
-            status.update(error_text(f"● Error: {e}"))
+            status.update(error_text(f"● Error: {rich_escape(str(e))}"))
+
+    async def _update_onboarding(self, scan_count: int, asset_count: int, finding_count: int) -> None:
+        onboarding = self.query_one("#dashboard-onboarding", Static)
+        if scan_count > 0 or asset_count > 0 or finding_count > 0:
+            onboarding.update("")
+            return
+        try:
+            targets, total_targets = await self.bbot_app.data_service.get_targets_paginated(limit=1)
+            _ = targets
+            presets = await self.bbot_app.data_service.get_presets()
+            preset_count = len(presets or [])
+        except Exception:
+            onboarding.update("")
+            return
+
+        if total_targets == 0 or preset_count == 0:
+            onboarding.update(
+                "[bold]Get started[/bold]\n"
+                "  1. [dim],[/dim] (comma) Setup → Targets — add scan targets\n"
+                "  2. Setup → Presets — define modules and options\n"
+                "  3. [dim]s[/dim] Scans → New Scan — queue your first run\n"
+                "\n"
+                "[dim]Press ? for shortcuts · Enter on a row below opens Scans or Findings[/dim]"
+            )
+        else:
+            onboarding.update(
+                "[bold]Ready to scan[/bold] — press [dim]s[/dim] Scans → New Scan. "
+                "[dim]?[/dim] lists shortcuts."
+            )
+
+    async def _update_dependency_status(self) -> None:
+        banner = self.query_one("#dashboard-dependency", Static)
+        try:
+            entries = await self.bbot_app.data_service.get_agent_logs(limit=100)
+            message = dependency_banner([entry.model_dump() for entry in entries])
+        except Exception:
+            banner.update("")
+            return
+        if not message:
+            banner.update("")
+            return
+        message = rich_escape(message)
+        if message.startswith("Dependency install failed"):
+            banner.update(error_text(message))
+        elif message.startswith("Dependencies ready"):
+            banner.update(success_text(message))
+        else:
+            banner.update(warning_text(message))
 
     async def update_recent_findings(self) -> None:
         """Update the recent findings table (sorted by severity)"""
@@ -219,6 +275,20 @@ class DashboardScreen(Container):
         except Exception:
             # Silent fail - don't break the dashboard
             pass
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        if event.data_table.row_count == 0:
+            return
+        try:
+            label = str(event.data_table.get_cell_at(Coordinate(event.cursor_row, 1)))
+        except Exception:
+            label = ""
+        if label.startswith("No recent"):
+            return
+        if event.data_table.id == "recent-scans-table":
+            self.bbot_app.action_show_scans()
+        elif event.data_table.id == "recent-findings-table":
+            self.bbot_app.action_show_findings()
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses"""

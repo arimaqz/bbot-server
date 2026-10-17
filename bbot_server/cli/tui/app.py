@@ -10,7 +10,6 @@ from textual.screen import Screen
 from textual.theme import Theme
 from textual.widgets import Header as TextualHeader, Footer, TabbedContent, TabPane
 
-
 # BBOT Dark Theme - uses Textual's design system
 # Custom colors (severity, status) are defined in styles.tcss as CSS variables
 BBOT_DARK_THEME = Theme(
@@ -49,15 +48,22 @@ from bbot_server.cli.tui.screens.dashboard import DashboardScreen
 from bbot_server.cli.tui.screens.scans import ScansScreen
 from bbot_server.cli.tui.screens.assets import AssetsScreen
 from bbot_server.cli.tui.screens.findings import FindingsScreen
-from bbot_server.cli.tui.screens.events import EventsScreen
-from bbot_server.cli.tui.screens.technologies import TechnologiesScreen
-from bbot_server.cli.tui.screens.targets import TargetsScreen
-from bbot_server.cli.tui.screens.activity import ActivityScreen
-from bbot_server.cli.tui.screens.management import PresetsScreen, AgentsScreen
-from bbot_server.cli.tui.screens.api_keys import APIKeysScreen
-from bbot_server.cli.tui.screens.reports import ReportsScreen
-from bbot_server.cli.tui.screens.modules import ModulesScreen
-from bbot_server.cli.tui.screens.settings import SettingsScreen
+from bbot_server.cli.tui.screens.logs import LogsScreen
+from bbot_server.cli.tui.screens.setup import SetupScreen
+from bbot_server.cli.tui.screens.help_modal import HelpModal
+from bbot_server.cli.tui.utils.keybindings import PRIMARY_BINDINGS, SETUP_BINDINGS, SCAN_BINDINGS
+
+
+def _bindings_from_defs(*groups):
+    bindings = []
+    seen = set()
+    for group in groups:
+        for item in group:
+            if item.action in seen:
+                continue
+            seen.add(item.action)
+            bindings.append(Binding(item.key, item.action, item.description, priority=item.priority))
+    return bindings
 
 
 class BBOTServerTUI(App):
@@ -71,24 +77,7 @@ class BBOTServerTUI(App):
     TITLE = "BBOT Server"
     CSS_PATH = "styles.tcss"
 
-    BINDINGS = [
-        Binding("q", "quit", "Quit", priority=True),
-        Binding("d", "show_dashboard", "Dashboard"),
-        Binding("s", "show_scans", "Scans"),
-        Binding("a", "show_assets", "Assets"),
-        Binding("f", "show_findings", "Findings"),
-        Binding("e", "show_events", "Events"),
-        Binding("t", "show_technologies", "Technologies"),
-        Binding("r", "show_targets", "Targets"),
-        Binding("v", "show_activity", "Activity"),
-        Binding("p", "show_presets", "Presets"),
-        Binding("m", "show_modules", "Modules"),
-        Binding("g", "show_agents", "Agents"),
-        Binding("k", "show_keys", "API Keys"),
-        Binding("o", "show_reports", "Reports"),
-        Binding("u", "show_settings", "Settings"),
-        Binding("question_mark", "show_help", "Help"),
-    ]
+    BINDINGS = _bindings_from_defs(PRIMARY_BINDINGS, SETUP_BINDINGS, SCAN_BINDINGS)
 
     def __init__(self, bbot_server, config):
         """
@@ -116,8 +105,10 @@ class BBOTServerTUI(App):
         self.scans_screen = None
         self.assets_screen = None
         self.findings_screen = None
-        self.events_screen = None
-        self.technologies_screen = None
+        self.logs_screen = None
+        self.setup_screen = None
+
+        # Nested setup screens (mirrored for convenience)
         self.targets_screen = None
         self.activity_screen = None
         self.presets_screen = None
@@ -126,12 +117,27 @@ class BBOTServerTUI(App):
         self.keys_screen = None
         self.reports_screen = None
         self.settings_screen = None
+        self.events_screen = None
+        self.technologies_screen = None
+
+    def _mirror_setup_screens(self) -> None:
+        if not self.setup_screen:
+            return
+        self.targets_screen = self.setup_screen.targets_screen
+        self.presets_screen = self.setup_screen.presets_screen
+        self.modules_screen = self.setup_screen.modules_screen
+        self.agents_screen = self.setup_screen.agents_screen
+        self.keys_screen = self.setup_screen.keys_screen
+        self.reports_screen = self.setup_screen.reports_screen
+        self.settings_screen = self.setup_screen.settings_screen
+        self.events_screen = self.setup_screen.events_screen
+        self.technologies_screen = self.setup_screen.technologies_screen
+        self.activity_screen = self.setup_screen.activity_screen
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app"""
         yield TextualHeader()
 
-        # Create tabbed interface
         with TabbedContent(initial="tab-dashboard", id="main-tabs"):
             with TabPane("Dashboard", id="tab-dashboard"):
                 self.dashboard_screen = DashboardScreen(self)
@@ -141,54 +147,23 @@ class BBOTServerTUI(App):
                 self.scans_screen = ScansScreen(self)
                 yield self.scans_screen
 
-            with TabPane("Assets", id="tab-assets"):
-                self.assets_screen = AssetsScreen(self)
-                yield self.assets_screen
-
             with TabPane("Findings", id="tab-findings"):
                 self.findings_screen = FindingsScreen(self)
                 yield self.findings_screen
 
-            with TabPane("Events", id="tab-events"):
-                self.events_screen = EventsScreen(self)
-                yield self.events_screen
+            with TabPane("Assets", id="tab-assets"):
+                self.assets_screen = AssetsScreen(self)
+                yield self.assets_screen
 
-            with TabPane("Technologies", id="tab-technologies"):
-                self.technologies_screen = TechnologiesScreen(self)
-                yield self.technologies_screen
+            with TabPane("Logs", id="tab-logs"):
+                self.logs_screen = LogsScreen(self)
+                yield self.logs_screen
 
-            with TabPane("Targets", id="tab-targets"):
-                self.targets_screen = TargetsScreen(self)
-                yield self.targets_screen
+            with TabPane("Setup", id="tab-setup"):
+                self.setup_screen = SetupScreen(self)
+                yield self.setup_screen
 
-            with TabPane("Activity", id="tab-activity"):
-                self.activity_screen = ActivityScreen(self)
-                yield self.activity_screen
-
-            with TabPane("Presets", id="tab-presets"):
-                self.presets_screen = PresetsScreen(self)
-                yield self.presets_screen
-
-            with TabPane("Modules", id="tab-modules"):
-                self.modules_screen = ModulesScreen(self)
-                yield self.modules_screen
-
-            with TabPane("Agents", id="tab-agents"):
-                self.agents_screen = AgentsScreen(self)
-                yield self.agents_screen
-
-            with TabPane("API Keys", id="tab-keys"):
-                self.keys_screen = APIKeysScreen(self)
-                yield self.keys_screen
-
-            with TabPane("Reports", id="tab-reports"):
-                self.reports_screen = ReportsScreen(self)
-                yield self.reports_screen
-
-            with TabPane("Settings", id="tab-settings"):
-                self.settings_screen = SettingsScreen(self)
-                yield self.settings_screen
-
+        self._mirror_setup_screens()
         yield Footer()
 
     def on_mount(self) -> None:
@@ -200,47 +175,34 @@ class BBOTServerTUI(App):
         from bbot_server.cli.tui.services.websocket_service import WebSocketService
         from bbot_server.cli.tui.services.state_service import StateService
 
-        # Register and apply the BBOT themes
         self.register_theme(BBOT_DARK_THEME)
         self.register_theme(BBOT_LIGHT_THEME)
         self.theme = "bbot-dark"
 
-        # Filter to suppress "taking a while" warnings from HTTP client
         class SlowRequestFilter(logging.Filter):
             def filter(self, record):
-                # Suppress "taking a while" warnings - these are informational
                 if "taking a while" in record.getMessage():
                     return False
                 return True
 
-        # Setup file logging with rotation
         log_dir = Path.home() / ".bbot_server"
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file = log_dir / "tui.log"
-        # 10MB max size, keep 1 backup (2 files total)
         file_handler = RotatingFileHandler(log_file, maxBytes=10 * 1024 * 1024, backupCount=1)
         file_handler.setLevel(logging.DEBUG)
         formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         file_handler.setFormatter(formatter)
 
-        # Remove all existing handlers (console/stderr) and only use file
         root_logger = logging.getLogger()
         root_logger.handlers.clear()
         root_logger.addHandler(file_handler)
         root_logger.setLevel(logging.DEBUG)
 
-        # Create filter instance
         slow_filter = SlowRequestFilter()
-
-        # Add filter to suppress slow request warnings in TUI notifications
-        # Apply to root logger
         root_logger.addFilter(slow_filter)
-
-        # Also apply filter to all existing handlers (including Textual's)
         for handler in root_logger.handlers:
             handler.addFilter(slow_filter)
 
-        # Apply to specific HTTP client logger
         http_logger = logging.getLogger("bbot_server.interfaces.http")
         http_logger.addFilter(slow_filter)
         for handler in http_logger.handlers:
@@ -248,58 +210,50 @@ class BBOTServerTUI(App):
 
         self.log.info(f"TUI logging to: {log_file}")
 
-        # Initialize services
         self.data_service = DataService(self.bbot_server)
         self.websocket_service = WebSocketService(self.bbot_server)
         self.state_service = StateService()
 
-        # Trigger initial refresh on all screens now that services are ready
-        # Using call_later to ensure widgets are fully mounted
         self.call_later(self._initial_refresh)
 
     async def _initial_refresh(self) -> None:
         """Trigger initial data load for the dashboard (initial tab)"""
-        # Load only the dashboard (initial tab)
         if self.dashboard_screen:
             await self.dashboard_screen.load_initial_data()
 
     def on_tabbed_content_tab_activated(self, event) -> None:
         """Handle tab changes - lazy load data on first visit"""
-        # Get the TabbedContent widget and find which pane is active
-        tabs = self.query_one("#main-tabs", TabbedContent)
-        active_pane_id = tabs.active
+        if event.tabbed_content.id != "main-tabs":
+            return
 
-        # Map pane IDs to screens
         tab_to_screen = {
             "tab-dashboard": self.dashboard_screen,
             "tab-scans": self.scans_screen,
             "tab-assets": self.assets_screen,
             "tab-findings": self.findings_screen,
-            "tab-events": self.events_screen,
-            "tab-technologies": self.technologies_screen,
-            "tab-targets": self.targets_screen,
-            "tab-activity": self.activity_screen,
-            "tab-presets": self.presets_screen,
-            "tab-modules": self.modules_screen,
-            "tab-agents": self.agents_screen,
-            "tab-keys": self.keys_screen,
-            "tab-reports": self.reports_screen,
-            "tab-settings": self.settings_screen,
+            "tab-logs": self.logs_screen,
+            "tab-setup": self.setup_screen,
         }
 
-        # Get the screen for this tab and trigger lazy load
-        screen = tab_to_screen.get(active_pane_id)
+        screen = tab_to_screen.get(event.pane.id)
         if screen and hasattr(screen, "load_initial_data"):
             self.run_worker(screen.load_initial_data(), exclusive=True)
 
+    def _activate_setup_pane(self, pane_id: str) -> None:
+        tabs = self.query_one("#main-tabs", TabbedContent)
+        tabs.active = "tab-setup"
+        if self.setup_screen:
+            setup_tabs = self.setup_screen.query_one("#setup-tabs", TabbedContent)
+            setup_tabs.active = pane_id
+
     async def action_quit(self) -> None:
         """Override quit to ensure cleanup"""
-        # Stop ALL screen refresh timers
         screens_with_timers = [
             self.dashboard_screen,
             self.scans_screen,
             self.assets_screen,
             self.findings_screen,
+            self.logs_screen,
             self.events_screen,
             self.technologies_screen,
             self.targets_screen,
@@ -309,76 +263,103 @@ class BBOTServerTUI(App):
             if screen and hasattr(screen, "_refresh_timer") and screen._refresh_timer:
                 screen._refresh_timer.stop()
 
-        # Stop activity streaming and its timer
         if self.activity_screen:
             if hasattr(self.activity_screen, "_start_timer") and self.activity_screen._start_timer:
                 self.activity_screen._start_timer.stop()
             await self.activity_screen.stop_streaming()
 
-        # Shutdown WebSocket service (properly closes async client)
         if self.websocket_service:
             await self.websocket_service.shutdown()
 
-        # Now quit normally - clean exit!
         self.exit()
 
     def action_show_dashboard(self) -> None:
-        """Show the dashboard tab"""
-        tabs = self.query_one(TabbedContent)
-        tabs.active = "tab-dashboard"
+        self.query_one("#main-tabs", TabbedContent).active = "tab-dashboard"
 
     def action_show_scans(self) -> None:
-        """Show the scans tab"""
-        tabs = self.query_one(TabbedContent)
-        tabs.active = "tab-scans"
+        self.query_one("#main-tabs", TabbedContent).active = "tab-scans"
 
     def action_show_assets(self) -> None:
-        """Show the assets tab"""
-        tabs = self.query_one(TabbedContent)
-        tabs.active = "tab-assets"
+        self.query_one("#main-tabs", TabbedContent).active = "tab-assets"
 
     def action_show_findings(self) -> None:
-        """Show the findings tab"""
-        tabs = self.query_one(TabbedContent)
-        tabs.active = "tab-findings"
+        self.query_one("#main-tabs", TabbedContent).active = "tab-findings"
+
+    def action_show_logs(self) -> None:
+        self.query_one("#main-tabs", TabbedContent).active = "tab-logs"
+
+    def action_show_setup(self) -> None:
+        self.query_one("#main-tabs", TabbedContent).active = "tab-setup"
 
     def action_show_events(self) -> None:
-        """Show the events tab"""
-        tabs = self.query_one(TabbedContent)
-        tabs.active = "tab-events"
+        self._activate_setup_pane("setup-events")
 
     def action_show_technologies(self) -> None:
-        """Show the technologies tab"""
-        tabs = self.query_one(TabbedContent)
-        tabs.active = "tab-technologies"
+        self._activate_setup_pane("setup-technologies")
 
     def action_show_targets(self) -> None:
-        """Show the targets tab"""
-        tabs = self.query_one(TabbedContent)
-        tabs.active = "tab-targets"
+        self._activate_setup_pane("setup-targets")
 
     def action_show_activity(self) -> None:
-        """Show the activity tab"""
-        tabs = self.query_one(TabbedContent)
-        tabs.active = "tab-activity"
+        self._activate_setup_pane("setup-activity")
 
     def action_show_presets(self) -> None:
-        self.query_one(TabbedContent).active = "tab-presets"
+        self._activate_setup_pane("setup-presets")
 
     def action_show_modules(self) -> None:
-        self.query_one(TabbedContent).active = "tab-modules"
+        self._activate_setup_pane("setup-modules")
 
     def action_show_agents(self) -> None:
-        self.query_one(TabbedContent).active = "tab-agents"
+        self._activate_setup_pane("setup-agents")
 
     def action_show_keys(self) -> None:
-        self.query_one(TabbedContent).active = "tab-keys"
+        self._activate_setup_pane("setup-keys")
 
     def action_show_reports(self) -> None:
-        self.query_one(TabbedContent).active = "tab-reports"
+        self._activate_setup_pane("setup-reports")
 
     def action_show_settings(self) -> None:
-        self.query_one(TabbedContent).active = "tab-settings"
+        self._activate_setup_pane("setup-settings")
+
+    def action_new_scan(self) -> None:
+        self.action_show_scans()
+        if self.scans_screen:
+            self.scans_screen.action_new_scan()
+
+    def action_manage_scan(self) -> None:
+        tabs = self.query_one("#main-tabs", TabbedContent)
+        if tabs.active != "tab-scans" or not self.scans_screen:
+            return
+        self.scans_screen.action_manage_scan()
+
+    def action_focus_filter(self) -> None:
+        tabs = self.query_one("#main-tabs", TabbedContent)
+        screen_by_tab = {
+            "tab-scans": self.scans_screen,
+            "tab-findings": self.findings_screen,
+            "tab-assets": self.assets_screen,
+            "tab-logs": self.logs_screen,
+        }
+        screen = screen_by_tab.get(tabs.active)
+        if tabs.active == "tab-setup" and self.setup_screen:
+            setup_tabs = self.setup_screen.query_one("#setup-tabs", TabbedContent)
+            setup_by_tab = {
+                "setup-events": self.events_screen,
+                "setup-technologies": self.technologies_screen,
+                "setup-targets": self.targets_screen,
+                "setup-activity": self.activity_screen,
+            }
+            screen = setup_by_tab.get(setup_tabs.active)
+        if screen and hasattr(screen, "action_focus_filter"):
+            screen.action_focus_filter()
+
+    def action_refresh(self) -> None:
+        tabs = self.query_one("#main-tabs", TabbedContent)
+        active = tabs.active
+        if active == "tab-dashboard" and self.dashboard_screen:
+            self.run_worker(self.dashboard_screen.action_refresh())
+        elif active == "tab-scans" and self.scans_screen:
+            self.run_worker(self.scans_screen.action_refresh())
 
     def apply_display_name(self, name: str) -> None:
         """Refresh visible branding immediately after a settings change."""
@@ -387,10 +368,7 @@ class BBOTServerTUI(App):
             self.dashboard_screen.query_one("#dashboard-title").update(f"[bold]{name} Dashboard[/bold]")
 
     def action_show_help(self) -> None:
-        """Show help modal with keyboard shortcuts"""
-        self.notify(
-            "Help: d=Dashboard s=Scans a=Assets f=Findings e=Events t=Technologies r=Targets v=Activity p=Presets m=Modules g=Agents k=Keys o=Reports u=Settings q=Quit"
-        )
+        self.push_screen(HelpModal())
 
     def get_system_commands(self, screen: Screen) -> Iterable[SystemCommand]:
         """Add BBOT theme shortcuts to the system menu"""
@@ -401,9 +379,7 @@ class BBOTServerTUI(App):
         )
 
     def action_theme_bbot_dark(self) -> None:
-        """Switch to BBOT dark theme"""
         self.theme = "bbot-dark"
 
     def action_theme_bbot_light(self) -> None:
-        """Switch to BBOT light theme"""
         self.theme = "bbot-light"

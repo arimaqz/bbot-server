@@ -221,12 +221,21 @@ async def test_full_tui_navigation_has_management_and_reports_tabs():
         assert app.query_one(ReportsScreen)
         assert app.query_one(ModulesScreen)
         assert app.query_one(SettingsScreen)
-        tabs = app.query_one(TabbedContent)
-        # Direct tab changes avoid lazy loading non-target services in this smoke test.
-        for tab in ("tab-presets", "tab-modules", "tab-agents", "tab-keys", "tab-reports", "tab-settings"):
-            tabs.active = tab
+        tabs = app.query_one("#main-tabs", TabbedContent)
+        setup_tabs = app.query_one("#setup-tabs", TabbedContent)
+        tabs.active = "tab-setup"
+        await pilot.pause()
+        for tab in (
+            "setup-presets",
+            "setup-modules",
+            "setup-agents",
+            "setup-keys",
+            "setup-reports",
+            "setup-settings",
+        ):
+            setup_tabs.active = tab
             await pilot.pause()
-            assert tabs.active == tab
+            assert setup_tabs.active == tab
 
 
 @pytest.mark.asyncio
@@ -257,15 +266,15 @@ async def test_default_theme_and_compact_layout_are_consistent():
         assert len(cards) == 4
         assert cards[-1].region.right >= stats_grid.region.right - 2
 
-        tabs = app.query_one(TabbedContent)
+        tabs = app.query_one("#main-tabs", TabbedContent)
         tabs.active = "tab-scans"
         await pilot.pause()
         actions = app.query_one("#scan-actions")
         controls = list(actions.children)
-        assert len(controls) == 5
+        assert len(controls) == 4
         rows = [control.region.y for control in controls]
         assert len(set(rows)) == 2
-        assert sorted(rows.count(row) for row in set(rows)) == [2, 3]
+        assert sorted(rows.count(row) for row in set(rows)) == [2, 2]
         assert all(control.region.bottom <= actions.region.bottom for control in controls)
         assert all(control.region.height == 3 for control in controls)
         assert all(control.region.width >= 14 for control in controls)

@@ -197,6 +197,18 @@ Vertical {
     padding: 0 1;
 }
 
+#dependency-status, #dashboard-dependency, #logs-dependency {
+    height: auto;
+    min-height: 1;
+    padding: 0 1;
+}
+
+#logs-feed-container {
+    height: 1fr;
+    border: solid $secondary;
+    margin: 1;
+}
+
 .content-area {
     height: 1fr;
 }
@@ -399,12 +411,11 @@ Container:focus-within {
     dock: bottom;
 }
 
-/* Keep scan actions compact: lifecycle actions share the first row, while the
-   report format and wider export button share the second row. */
+/* Scan actions: new/manage on row 1; report format + export on row 2. */
 #scan-actions {
     layout: grid;
-    grid-size: 3 2;
-    grid-columns: 1fr 1fr 1fr;
+    grid-size: 2 2;
+    grid-columns: 1fr 1fr;
     grid-rows: 3 3;
     grid-gutter: 1;
     height: 7;
@@ -420,7 +431,12 @@ Container:focus-within {
 }
 
 #report-scan-btn {
-    column-span: 2;
+    column-span: 1;
+}
+
+.onboarding-banner {
+    padding: 0 2 1 2;
+    color: $warning;
 }
 
 /* Keep the new report screen aligned with the established screen gutters. */

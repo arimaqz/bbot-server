@@ -182,6 +182,25 @@ async def test_report_exports_and_redacts_preset_secrets(tmp_path):
             "config": {"api_key": "[REDACTED]"},
         },
     }
+
+
+@pytest.mark.asyncio
+async def test_report_redacts_plural_keys_and_http_headers():
+    scan = {
+        **SCAN,
+        "preset": {
+            "name": "baseline",
+            "preset": {
+                "modules": ["httpx"],
+                "api_keys": ["example-key"],
+                "http_headers": {"X-Session": "example-secret"},
+            },
+        },
+    }
+    snapshot = await collect_report(ReportClient(), scan=scan)
+    definition = snapshot["scan"]["preset"]["definition"]
+    assert definition["api_keys"] == "[REDACTED]"
+    assert definition["http_headers"] == {"X-Session": "[REDACTED]"}
     assert snapshot["asset_records"] == [
         {
             "host": "api.example.org",
